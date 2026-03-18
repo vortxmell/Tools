@@ -182,6 +182,47 @@ mainWin.ClipsDescendants = true
 mkStroke(mainWin, C.gold, 1.5)
 
 -- ================================================
+-- KEYBOARD FOLLOW (Simple & Safe)
+-- ================================================
+local kbBasePos = nil
+local kbActive  = false
+
+UIS.TextBoxFocused:Connect(function()
+    if kbActive then return end
+    task.wait(0.25) -- tunggu keyboard animate
+    kbActive = true
+
+    local cam      = workspace.CurrentCamera
+    local screenH  = cam.ViewportSize.Y
+    local kbH      = screenH * 0.42  -- anggaran keyboard height mobile
+    local visibleH = screenH - kbH
+
+    local absY     = mainWin.AbsolutePosition.Y
+    local absX     = mainWin.AbsolutePosition.X
+    local winH     = mainWin.AbsoluteSize.Y
+    local winBot   = absY + winH
+
+    -- Simpan posisi asal (pixel)
+    kbBasePos = {x = absX, y = absY}
+
+    -- Gerak ke atas kalau window terlindung keyboard
+    if winBot > visibleH then
+        local newY = math.max(5, visibleH - winH - 5)
+        mainWin.Position = UDim2.new(0, absX, 0, newY)
+    end
+end)
+
+UIS.TextBoxFocusReleased:Connect(function()
+    task.wait(0.1)
+    kbActive = false
+    -- Restore posisi asal
+    if kbBasePos then
+        mainWin.Position = UDim2.new(0, kbBasePos.x, 0, kbBasePos.y)
+        kbBasePos = nil
+    end
+end)
+
+-- ================================================
 -- TITLE BAR
 -- ================================================
 local titleBar = mkFrame(mainWin,
