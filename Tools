@@ -1,6 +1,7 @@
 -- ================================================
--- Hub Tools v2.3 — rSpy + Console (Tab System)
+-- Hub Tools v2.4 — rSpy + Console (Tab System)
 -- Gold Theme | Resizeable | Universal
+-- Keyboard Follow + Stable Editor
 -- ================================================
 
 local Players = game:GetService("Players")
@@ -34,6 +35,11 @@ local logLines       = {}
 local activeTab      = "console"
 local editorFullsize = false
 local sharedCode     = ""
+
+-- Window original position
+local WIN_W, WIN_H = 440, 520
+local MIN_W, MIN_H = 320, 380
+local origWinPos   = UDim2.new(0.5,-WIN_W/2, 0.5,-WIN_H/2)
 
 -- ================================================
 -- COLORS
@@ -170,17 +176,75 @@ end
 -- ================================================
 -- MAIN WINDOW
 -- ================================================
-local WIN_W, WIN_H = 440, 520
-local MIN_W, MIN_H = 320, 380
-
 local mainWin = mkFrame(gui,
     UDim2.new(0,WIN_W,0,WIN_H),
-    UDim2.new(0.5,-WIN_W/2,0.5,-WIN_H/2),
+    origWinPos,
     C.bg, 10)
 mainWin.Active = true
 mainWin.Draggable = true
 mainWin.ClipsDescendants = true
 mkStroke(mainWin, C.gold, 1.5)
+
+-- ================================================
+-- KEYBOARD FOLLOW
+-- ================================================
+-- Track window position untuk keyboard offset
+local keyboardVisible = false
+local baseWinPos = nil  -- simpan posisi sebelum keyboard naik
+
+local function getWinAbsPos()
+    return Vector2.new(
+        mainWin.AbsolutePosition.X,
+        mainWin.AbsolutePosition.Y
+    )
+end
+
+local function getWinAbsSize()
+    return Vector2.new(
+        mainWin.AbsoluteSize.X,
+        mainWin.AbsoluteSize.Y
+    )
+end
+
+UIS.TextBoxFocused:Connect(function()
+    task.wait(0.15) -- tunggu keyboard animate
+    if keyboardVisible then return end
+    keyboardVisible = true
+
+    -- Simpan posisi semasa
+    local absPos = getWinAbsPos()
+    local absSize = getWinAbsSize()
+    local screenSize = gui.AbsoluteSize
+
+    -- Anggaran keyboard height (~40% screen pada mobile)
+    local kbHeight = screenSize.Y * 0.42
+    local winBottom = absPos.Y + absSize.Y
+    local visibleAreaBottom = screenSize.Y - kbHeight
+
+    baseWinPos = mainWin.Position
+
+    -- Kalau window terlindung keyboard, gerak ke atas
+    if winBottom > visibleAreaBottom then
+        local overlap = winBottom - visibleAreaBottom + 10
+        local newY = absPos.Y - overlap
+
+        -- Pastikan tak keluar screen atas
+        newY = math.max(10, newY)
+
+        mainWin.Position = UDim2.new(0, absPos.X, 0, newY)
+    end
+end)
+
+UIS.TextBoxFocusReleased:Connect(function()
+    task.wait(0.1)
+    keyboardVisible = false
+
+    -- Restore posisi asal
+    if baseWinPos then
+        mainWin.Position = baseWinPos
+        baseWinPos = nil
+    end
+end)
 
 -- ================================================
 -- TITLE BAR
@@ -249,8 +313,8 @@ local rspyContent = mkFrame(mainWin,
 rspyContent.ClipsDescendants = true
 rspyContent.Visible = false
 
-tabs["console"]     = conTab
-tabs["rspy"]        = rspyTab
+tabs["console"]        = conTab
+tabs["rspy"]           = rspyTab
 tabContents["console"] = conContent
 tabContents["rspy"]    = rspyContent
 
@@ -270,13 +334,13 @@ mkLabel(resizeHandle, "⤡",
     C.bg, 11, Enum.Font.GothamBold,
     Enum.TextXAlignment.Center)
 
-local resizing = false
+local resizing    = false
 local resizeStart, sizeStart
 
 resizeHandle.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.Touch
     or input.UserInputType == Enum.UserInputType.MouseButton1 then
-        resizing = true
+        resizing    = true
         resizeStart = Vector2.new(input.Position.X, input.Position.Y)
         sizeStart   = Vector2.new(mainWin.AbsoluteSize.X, mainWin.AbsoluteSize.Y)
     end
@@ -399,7 +463,7 @@ local fullPanel = mkFrame(conContent,
 fullPanel.ClipsDescendants = true
 fullPanel.Visible = false
 
--- Editor scroll container
+-- Editor scroll
 local editorScroll = Instance.new("ScrollingFrame")
 editorScroll.Size = UDim2.new(1,-16,1,-36)
 editorScroll.Position = UDim2.new(0,8,0,4)
@@ -442,7 +506,7 @@ edPad.PaddingLeft = UDim.new(0,4)
 edPad.PaddingTop = UDim.new(0,4)
 edPad.PaddingBottom = UDim.new(0,8)
 
--- Bottom bar dalam fullPanel
+-- Bottom bar
 local fullBottomBar = mkFrame(fullPanel,
     UDim2.new(1,-16,0,28),
     UDim2.new(0,8,1,-32),
@@ -457,22 +521,19 @@ local lineCountLabel = mkLabel(fullBottomBar, "1 line",
     C.dim, 11)
 
 -- ================================================
--- EDITOR RESIZE FUNCTION
+-- EDITOR SIZE UPDATE
 -- ================================================
 local function updateEditorSize()
     local text = fullCodeBox.Text
     local lineCount = 1
     for _ in text:gmatch("\n") do lineCount += 1 end
     lineCount += 3
-
     local totalH = math.max(MIN_EDITOR_H, lineCount * LINE_HEIGHT)
     fullCodeBox.Size = UDim2.new(1,-8, 0, totalH)
-    editorScroll.CanvasSize = UDim2.new(0,0, 0, totalH + 16)
-
-    -- Update line counter
-    local actualLines = 1
-    for _ in text:gmatch("\n") do actualLines += 1 end
-    lineCountLabel.Text = actualLines .. " lines"
+    editorScroll.CanvasSize = UDim2.new(0,0, 0, totalH+16)
+    local actual = 1
+    for _ in text:gmatch("\n") do actual += 1 end
+    lineCountLabel.Text = actual.." lines"
 end
 
 -- ================================================
@@ -493,10 +554,12 @@ editorScroll.InputChanged:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.Touch
         and isTouching and lastTouchY then
         local delta = lastTouchY - input.Position.Y
-        local maxY = math.max(0,
+        local maxY  = math.max(0,
             editorScroll.CanvasSize.Y.Offset - editorScroll.AbsoluteSize.Y)
         editorScroll.CanvasPosition = Vector2.new(0,
-            math.clamp(editorScroll.CanvasPosition.Y + delta * SCROLL_SPEED, 0, maxY))
+            math.clamp(
+                editorScroll.CanvasPosition.Y + delta * SCROLL_SPEED,
+                0, maxY))
         lastTouchY = input.Position.Y
     end
     if input.UserInputType == Enum.UserInputType.MouseWheel then
@@ -504,7 +567,7 @@ editorScroll.InputChanged:Connect(function(input)
             editorScroll.CanvasSize.Y.Offset - editorScroll.AbsoluteSize.Y)
         editorScroll.CanvasPosition = Vector2.new(0,
             math.clamp(
-                editorScroll.CanvasPosition.Y - input.Position.Z * 60 * SCROLL_SPEED,
+                editorScroll.CanvasPosition.Y - input.Position.Z*60*SCROLL_SPEED,
                 0, maxY))
     end
 end)
@@ -526,10 +589,10 @@ fullCodeBox:GetPropertyChangedSignal("CursorPosition"):Connect(function()
         for _ in fullCodeBox.Text:sub(1,pos-1):gmatch("\n") do
             lineNum += 1
         end
-        local cursorY = lineNum * LINE_HEIGHT
+        local cursorY   = lineNum * LINE_HEIGHT
         local scrollTop = editorScroll.CanvasPosition.Y
         local scrollBot = scrollTop + editorScroll.AbsoluteSize.Y
-        local margin = 32
+        local margin    = 32
         if cursorY < scrollTop + margin then
             editorScroll.CanvasPosition = Vector2.new(0,
                 math.max(0, cursorY - margin))
@@ -551,7 +614,6 @@ end)
 fullCodeBox:GetPropertyChangedSignal("Text"):Connect(function()
     if not editorFullsize then return end
     sharedCode = fullCodeBox.Text
-    -- Sync first line to bar
     local firstLine = sharedCode:match("([^\n]*)") or ""
     codeInput.Text = firstLine
     updateEditorSize()
@@ -569,7 +631,6 @@ end)
 -- ================================================
 local function toggleFullsize()
     editorFullsize = not editorFullsize
-
     if editorFullsize then
         fullsizeBtn.Text = "⊡ Exit"
         fullsizeBtn.BackgroundColor3 = C.goldBr
@@ -598,7 +659,7 @@ fullsizeBtn.MouseButton1Click:Connect(toggleFullsize)
 -- CONSOLE LOG BUILDER
 -- ================================================
 local function addConLog(text, color, prefix)
-    color = color or C.white
+    color  = color or C.white
     prefix = prefix or ""
     local line = {text=text, color=color, prefix=prefix, time=os.date("%M:%S")}
     table.insert(logLines, line)
@@ -656,7 +717,6 @@ local function executeCode(code)
     local preview = code:match("([^\n]*)") or ""
     addConLog("> "..(#preview>55 and preview:sub(1,55).."..." or preview),
         C.goldText, "[exec]")
-
     local fn, err = loadstring(code)
     if fn then
         local ok, res = pcall(fn)
@@ -668,7 +728,6 @@ local function executeCode(code)
     else
         addConLog(tostring(err), C.red, "[err]")
     end
-
     if editorFullsize then toggleFullsize() end
 end
 
@@ -888,7 +947,7 @@ local function addRspyLog(dir, name, path, args)
     if isBuf then
         local btag = mkFrame(row,
             UDim2.new(0,22,0,13), UDim2.new(0,36,0,8), C.purple, 3)
-        mkLabel(btag, "buf",
+        mkLabel(btag,"buf",
             UDim2.new(1,0,1,0), nil,
             C.white, 8, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
     end
@@ -913,7 +972,7 @@ local function addRspyLog(dir, name, path, args)
     rb.MouseButton1Click:Connect(function()
         selectedLog = entry
         detailLabel.Text = string.format("[%s] %s | %s\n%s",
-            dir, name, ts, argsStr)
+            dir,name,ts,argsStr)
         for _,c in pairs(rspyScroll:GetChildren()) do
             if c:IsA("Frame") then c.BackgroundColor3=C.panel end
         end
@@ -1077,7 +1136,7 @@ startHook()
 -- ================================================
 setTab("console")
 
-addConLog("Hub Tools v2.3 loaded!", C.green, "[sys]")
-addConLog("⛶ Full = fullsize editor, tekan lagi exit", C.dim, "[sys]")
-addConLog("Editor scroll laju x3.5, tak shrink masa keyboard tutup", C.dim, "[sys]")
+addConLog("Hub Tools v2.4 loaded!", C.green, "[sys]")
+addConLog("UI akan follow keyboard naik/turun", C.dim, "[sys]")
+addConLog("⛶ Full = fullsize editor", C.dim, "[sys]")
 addConLog("Drag ⤡ untuk resize window", C.dim, "[sys]")
