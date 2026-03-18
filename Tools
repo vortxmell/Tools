@@ -1,5 +1,5 @@
 -- ================================================
--- Hub Tools v2.1 — rSpy + Console (Tab System)
+-- Hub Tools v2.2 — rSpy + Console (Tab System)
 -- Gold Theme | Resizeable | Universal
 -- ================================================
 
@@ -205,7 +205,7 @@ local closeBtn = mkBtn(titleBar, "✕",
     C.red, C.white, 13)
 
 -- ================================================
--- TAB BAR — Console kiri, rSpy kanan
+-- TAB BAR
 -- ================================================
 local tabBar = mkFrame(mainWin,
     UDim2.new(1,0,0,32),
@@ -218,27 +218,22 @@ local tabContents = {}
 local function setTab(name)
     activeTab = name
     for tname, btn in pairs(tabs) do
-        btn.BackgroundColor3 = tname == name and C.tabActive or C.tabInactive
-        btn.TextColor3 = tname == name and C.goldText or C.dim
+        btn.BackgroundColor3 = tname==name and C.tabActive or C.tabInactive
+        btn.TextColor3 = tname==name and C.goldText or C.dim
     end
     for tname, content in pairs(tabContents) do
-        content.Visible = tname == name
+        content.Visible = tname==name
     end
 end
 
--- Console tab — kiri (index 0)
 local conTab = mkBtn(tabBar, "🖥 Console",
-    UDim2.new(0,110,1,-4),
-    UDim2.new(0,4,0,2),
+    UDim2.new(0,110,1,-4), UDim2.new(0,4,0,2),
     C.tabInactive, C.dim, 12)
 
--- rSpy tab — kanan (index 1)
 local rspyTab = mkBtn(tabBar, "⚡ rSpy",
-    UDim2.new(0,100,1,-4),
-    UDim2.new(0,118,0,2),
+    UDim2.new(0,100,1,-4), UDim2.new(0,118,0,2),
     C.tabInactive, C.dim, 12)
 
--- Content frames
 local conContent = mkFrame(mainWin,
     UDim2.new(1,0,1,-66),
     UDim2.new(0,0,0,66),
@@ -254,9 +249,9 @@ rspyContent.ClipsDescendants = true
 rspyContent.Visible = false
 
 tabs["console"] = conTab
-tabs["rspy"] = rspyTab
+tabs["rspy"]    = rspyTab
 tabContents["console"] = conContent
-tabContents["rspy"] = rspyContent
+tabContents["rspy"]    = rspyContent
 
 conTab.MouseButton1Click:Connect(function() setTab("console") end)
 rspyTab.MouseButton1Click:Connect(function() setTab("rspy") end)
@@ -292,8 +287,8 @@ UIS.InputChanged:Connect(function(input)
     or input.UserInputType == Enum.UserInputType.MouseMovement then
         local delta = Vector2.new(input.Position.X, input.Position.Y) - resizeStart
         mainWin.Size = UDim2.new(0,
-            math.max(MIN_W, sizeStart.X + delta.X), 0,
-            math.max(MIN_H, sizeStart.Y + delta.Y))
+            math.max(MIN_W, sizeStart.X+delta.X), 0,
+            math.max(MIN_H, sizeStart.Y+delta.Y))
     end
 end)
 
@@ -312,8 +307,8 @@ local minimized = false
 minBtn.MouseButton1Click:Connect(function()
     minimized = not minimized
     tabBar.Visible = not minimized
-    for _, c in pairs(tabContents) do
-        c.Visible = not minimized and (activeTab == _)
+    for tname, c in pairs(tabContents) do
+        c.Visible = not minimized and (tname == activeTab)
     end
     resizeHandle.Visible = not minimized
     if minimized then
@@ -327,21 +322,23 @@ minBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-closeBtn.MouseButton1Click:Connect(function()
-    gui:Destroy()
-end)
+closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
 
 -- ================================================
 -- ===== CONSOLE TAB =====
 -- ================================================
 
--- Executor bar (bawah tab bar, atas semua)
+-- Shared code state — SINGLE SOURCE OF TRUTH
+local sharedCode = ""
+
+-- Exec bar (always visible in console tab)
 local execBar = mkFrame(conContent,
     UDim2.new(1,-16,0,34),
     UDim2.new(0,8,0,6),
     C.panelDark, 5)
 
-local codeInput = mkInput(execBar, "▶ Execute Lua...",
+local codeInput = mkInput(execBar,
+    "▶ Execute Lua...",
     UDim2.new(1,-102,1,-4),
     UDim2.new(0,2,0,2))
 codeInput.MultiLine = false
@@ -356,10 +353,17 @@ local runBtn = mkBtn(execBar, "▶ Run",
     UDim2.new(1,-50,0,2),
     C.green, C.bg, 12)
 
+-- Normal mode panel (toolbar + search + log)
+local normalPanel = mkFrame(conContent,
+    UDim2.new(1,0,1,-44),
+    UDim2.new(0,0,0,44),
+    C.bg, 0)
+normalPanel.ClipsDescendants = false
+
 -- Toolbar
-local conToolbar = mkFrame(conContent,
+local conToolbar = mkFrame(normalPanel,
     UDim2.new(1,-16,0,26),
-    UDim2.new(0,8,0,44),
+    UDim2.new(0,8,0,4),
     C.panelDark, 5)
 
 local clearConBtn = mkBtn(conToolbar, "🗑 Clear",
@@ -376,33 +380,51 @@ local conCount = mkLabel(conToolbar, "0 lines",
     C.dim, 11)
 
 -- Search
-local conSearch = mkInput(conContent, "🔍 Filter logs...",
+local conSearch = mkInput(normalPanel,
+    "🔍 Filter logs...",
     UDim2.new(1,-16,0,24),
-    UDim2.new(0,8,0,74))
+    UDim2.new(0,8,0,34))
 
--- Log scroll (normal mode)
-local conScroll = mkScroll(conContent,
-    UDim2.new(1,-16,1,-106),
-    UDim2.new(0,8,0,102))
+-- Log scroll
+local conScroll = mkScroll(normalPanel,
+    UDim2.new(1,-16,1,-62),
+    UDim2.new(0,8,0,62))
 mkStroke(conScroll, C.gold)
 
 -- ================================================
--- FULLSIZE EDITOR
+-- FULLSIZE EDITOR PANEL
 -- ================================================
--- Full editor frame (hidden by default, replaces conScroll area)
-local fullEditor = mkFrame(conContent,
-    UDim2.new(1,-16,1,-106),
-    UDim2.new(0,8,0,102),
-    C.panelDark, 5)
-fullEditor.Visible = false
-mkStroke(fullEditor, C.goldBr, 1.5)
+local fullPanel = mkFrame(conContent,
+    UDim2.new(1,0,1,-44),
+    UDim2.new(0,0,0,44),
+    C.bg, 0)
+fullPanel.ClipsDescendants = true
+fullPanel.Visible = false
 
+-- Editor container with scroll
+local editorScroll = Instance.new("ScrollingFrame")
+editorScroll.Size = UDim2.new(1,-16,1,-8)
+editorScroll.Position = UDim2.new(0,8,0,4)
+editorScroll.BackgroundColor3 = C.panelDark
+editorScroll.BorderSizePixel = 0
+editorScroll.ScrollBarThickness = 5
+editorScroll.ScrollBarImageColor3 = C.gold
+editorScroll.CanvasSize = UDim2.new(0,0,0,0)
+editorScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+editorScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+editorScroll.ElasticBehavior = Enum.ElasticBehavior.Never
+editorScroll.Parent = fullPanel
+Instance.new("UICorner",editorScroll).CornerRadius = UDim.new(0,6)
+mkStroke(editorScroll, C.goldBr, 1.5)
+
+-- Full code textbox inside scroll
 local fullCodeBox = Instance.new("TextBox")
-fullCodeBox.Size = UDim2.new(1,-8,1,-8)
+fullCodeBox.Size = UDim2.new(1,-8,0,0) -- height auto
 fullCodeBox.Position = UDim2.new(0,4,0,4)
+fullCodeBox.AutomaticSize = Enum.AutomaticSize.Y
 fullCodeBox.BackgroundTransparency = 1
 fullCodeBox.Text = ""
-fullCodeBox.PlaceholderText = "-- Write Lua here...\n-- Tekan Run atau Ctrl+Enter untuk execute"
+fullCodeBox.PlaceholderText = "-- Write Lua here...\n-- Paste script panjang pun boleh scroll!"
 fullCodeBox.TextColor3 = C.goldText
 fullCodeBox.PlaceholderColor3 = C.dim
 fullCodeBox.TextSize = 12
@@ -412,18 +434,61 @@ fullCodeBox.TextYAlignment = Enum.TextYAlignment.Top
 fullCodeBox.MultiLine = true
 fullCodeBox.ClearTextOnFocus = false
 fullCodeBox.TextWrapped = false
-fullCodeBox.Parent = fullEditor
+fullCodeBox.Parent = editorScroll
 
--- Line numbers bg
-local lineNumBg = mkFrame(fullEditor,
-    UDim2.new(0,24,1,-8),
-    UDim2.new(0,0,0,4),
-    C.dimDark, 0)
+-- Padding inside editor
+local edPad = Instance.new("UIPadding", fullCodeBox)
+edPad.PaddingLeft = UDim.new(0,4)
+edPad.PaddingTop = UDim.new(0,4)
+edPad.PaddingBottom = UDim.new(0,8)
 
--- Sync code between single line and full editor
-local syncingCode = false
+-- Clear editor button (inside fullsize)
+local clearEditorBtn = mkBtn(fullPanel, "🗑 Clear Editor",
+    UDim2.new(0,100,0,22),
+    UDim2.new(1,-108,1,-26),
+    C.red, C.white, 11)
+clearEditorBtn.ZIndex = 5
 
--- Toggle fullsize
+-- ================================================
+-- SYNC LOGIC — Single source: sharedCode
+-- ================================================
+
+-- Update single line bar from sharedCode
+local function syncToBar()
+    -- Show first line only in bar
+    local firstLine = sharedCode:match("([^\n]*)")
+    codeInput.Text = firstLine or sharedCode
+end
+
+-- Update fullCodeBox from sharedCode
+local function syncToFull()
+    fullCodeBox.Text = sharedCode
+end
+
+-- When user types in single line bar
+codeInput:GetPropertyChangedSignal("Text"):Connect(function()
+    if editorFullsize then return end -- ignore if fullsize active
+    sharedCode = codeInput.Text
+end)
+
+-- When user types in full editor
+fullCodeBox:GetPropertyChangedSignal("Text"):Connect(function()
+    if not editorFullsize then return end
+    sharedCode = fullCodeBox.Text
+    -- Sync first line back to bar
+    syncToBar()
+end)
+
+-- Clear editor button
+clearEditorBtn.MouseButton1Click:Connect(function()
+    sharedCode = ""
+    fullCodeBox.Text = ""
+    codeInput.Text = ""
+end)
+
+-- ================================================
+-- TOGGLE FULLSIZE
+-- ================================================
 local function toggleFullsize()
     editorFullsize = not editorFullsize
 
@@ -433,52 +498,53 @@ local function toggleFullsize()
         fullsizeBtn.BackgroundColor3 = C.goldBr
         fullsizeBtn.TextColor3 = C.bg
 
-        -- Sync code from single line to full editor
-        if codeInput.Text ~= "" then
-            fullCodeBox.Text = codeInput.Text
-        end
+        -- Sync current code to full editor
+        fullCodeBox.Text = sharedCode
 
-        conScroll.Visible = false
-        fullEditor.Visible = true
+        -- Hide normal, show full
+        normalPanel.Visible = false
+        fullPanel.Visible = true
 
-        -- Focus full editor
-        fullCodeBox:CaptureFocus()
+        -- Focus editor
+        task.defer(function()
+            fullCodeBox:CaptureFocus()
+        end)
     else
         -- Exit fullsize
         fullsizeBtn.Text = "⛶ Full"
         fullsizeBtn.BackgroundColor3 = C.dimDark
         fullsizeBtn.TextColor3 = C.goldText
 
-        -- Sync back
-        if fullCodeBox.Text ~= "" then
-            codeInput.Text = fullCodeBox.Text
-        end
+        -- Sync from full editor back
+        sharedCode = fullCodeBox.Text
+        syncToBar()
 
-        fullEditor.Visible = false
-        conScroll.Visible = true
+        -- Hide full, show normal
+        fullPanel.Visible = false
+        normalPanel.Visible = true
     end
 end
 
 fullsizeBtn.MouseButton1Click:Connect(toggleFullsize)
 
 -- ================================================
--- CONSOLE LOG BUILDER
+-- EXECUTE FUNCTION
 -- ================================================
 local function addConLog(text, color, prefix)
     color = color or C.white
     prefix = prefix or ""
-    local line = {text=text, color=color, prefix=prefix, time=getTime()}
+    local line = {text=text, color=color, prefix=prefix, time=os.date("%M:%S")}
     table.insert(logLines, line)
     if #logLines > maxLogs then table.remove(logLines, 1) end
 
     local filter = conSearch.Text:lower()
-    local visible = filter=="" or text:lower():find(filter,1,true)~=nil
+    local vis = filter=="" or text:lower():find(filter,1,true)~=nil
 
     local row = mkFrame(conScroll,
         UDim2.new(1,-4,0,20), nil, C.bg)
     row.BackgroundTransparency = 1
     row.LayoutOrder = #logLines
-    row.Visible = visible
+    row.Visible = vis
 
     mkLabel(row, line.time,
         UDim2.new(0,36,1,0), UDim2.new(0,2,0,0),
@@ -515,28 +581,18 @@ local function addConLog(text, color, prefix)
     end
 end
 
--- ================================================
--- EXECUTE FUNCTION
--- ================================================
 local function executeCode(code)
     if code == "" then return end
-    addConLog("> "..string.sub(code, 1, 60)..(#code>60 and "..." or ""),
+    -- Log preview
+    local preview = code:match("([^\n]*)")
+    addConLog("> "..(#preview>55 and preview:sub(1,55).."..." or preview),
         C.goldText, "[exec]")
-
-    -- Clear input if not fullsize
-    if not editorFullsize then
-        codeInput.Text = ""
-    end
 
     local fn, err = loadstring(code)
     if fn then
         local ok, res = pcall(fn)
         if ok then
-            if res ~= nil then
-                addConLog(tostring(res), C.green, "[ok]")
-            else
-                addConLog("Done.", C.green, "[ok]")
-            end
+            addConLog(res~=nil and tostring(res) or "Done.", C.green, "[ok]")
         else
             addConLog(tostring(res), C.red, "[err]")
         end
@@ -544,21 +600,20 @@ local function executeCode(code)
         addConLog(tostring(err), C.red, "[err]")
     end
 
-    -- Switch to console tab to see result if fullsize
+    -- Switch to normal view to see result if in fullsize
     if editorFullsize then
-        -- Stay in fullsize, result will appear when exit
+        toggleFullsize()
     end
 end
 
--- Run button
 runBtn.MouseButton1Click:Connect(function()
-    local code = editorFullsize and fullCodeBox.Text or codeInput.Text
-    executeCode(code)
+    executeCode(sharedCode)
 end)
 
--- Enter key for single line
 codeInput.FocusLost:Connect(function(enter)
-    if enter then executeCode(codeInput.Text) end
+    if enter and not editorFullsize then
+        executeCode(sharedCode)
+    end
 end)
 
 -- ================================================
@@ -605,8 +660,6 @@ end)
 -- ================================================
 -- ===== rSPY TAB =====
 -- ================================================
-
--- Toolbar
 local rspyToolbar = mkFrame(rspyContent,
     UDim2.new(1,-16,0,26),
     UDim2.new(0,8,0,6),
@@ -625,24 +678,21 @@ local rspyCount = mkLabel(rspyToolbar, "0 events",
     UDim2.new(0,90,1,0), UDim2.new(0,207,0,0),
     C.dim, 11)
 
--- Status
 local rspyStatus = mkLabel(rspyContent, "● Listening...",
     UDim2.new(1,-16,0,16),
     UDim2.new(0,8,0,36),
     C.green, 11)
 
--- Search
-local rspySearch = mkInput(rspyContent, "🔍 Filter remote name...",
+local rspySearch = mkInput(rspyContent,
+    "🔍 Filter remote name...",
     UDim2.new(1,-16,0,24),
     UDim2.new(0,8,0,56))
 
--- Log scroll
 local rspyScroll = mkScroll(rspyContent,
     UDim2.new(1,-16,1,-188),
     UDim2.new(0,8,0,84))
 mkStroke(rspyScroll, C.gold)
 
--- Detail panel
 local detailPanel = mkFrame(rspyContent,
     UDim2.new(1,-16,0,72),
     UDim2.new(0,8,1,-96),
@@ -658,16 +708,16 @@ detailLabel.TextTruncate = Enum.TextTruncate.None
 detailLabel.TextWrapped = true
 detailLabel.ClipsDescendants = true
 
-local copyHexBtn  = mkBtn(detailPanel, "📋 Hex",
+local copyHexBtn = mkBtn(detailPanel, "📋 Hex",
     UDim2.new(0,65,0,22), UDim2.new(0,4,1,-26),
     C.gold, C.bg, 11)
-local replayBtn   = mkBtn(detailPanel, "▷ Replay",
+local replayBtn = mkBtn(detailPanel, "▷ Replay",
     UDim2.new(0,72,0,22), UDim2.new(0,73,1,-26),
     C.green, C.bg, 11)
-local blockBtn    = mkBtn(detailPanel, "🚫 Block",
-    UDim2.new(0,68,0,22), UDim2.new(0,149,0,2+detailPanel.AbsoluteSize.Y-26),
+local blockBtn = mkBtn(detailPanel, "🚫 Block",
+    UDim2.new(0,68,0,22), UDim2.new(0,149,1,-26),
     C.red, C.white, 11)
-local unblockBtn  = mkBtn(detailPanel, "✓ Unblock",
+local unblockBtn = mkBtn(detailPanel, "✓ Unblock",
     UDim2.new(0,76,0,22), UDim2.new(0,221,1,-26),
     C.dimDark, C.goldText, 11)
 
@@ -679,11 +729,11 @@ local function describeValue(v)
     if t == "buffer" then
         local len = buffer.len(v)
         local hex = {}
-        for i = 0, math.min(len-1,6) do
-            table.insert(hex, string.format("%02X", buffer.readu8(v,i)))
+        for i = 0,math.min(len-1,6) do
+            table.insert(hex, string.format("%02X",buffer.readu8(v,i)))
         end
         return string.format("<buf:%db>[%s%s]",
-            len, table.concat(hex," "), len>7 and "..." or "")
+            len,table.concat(hex," "),len>7 and "..." or "")
     elseif t == "Instance" then
         return "["..v.ClassName.."]"..v.Name
     elseif t == "Vector3" then
@@ -701,15 +751,15 @@ local function describeValue(v)
 end
 
 local function describeArgs(args)
-    if #args == 0 then return "(no args)" end
+    if #args==0 then return "(no args)" end
     local p = {}
-    for _,v in ipairs(args) do table.insert(p, describeValue(v)) end
-    return table.concat(p, ", ")
+    for _,v in ipairs(args) do table.insert(p,describeValue(v)) end
+    return table.concat(p,", ")
 end
 
 local function hasBuffer(args)
     for _,v in ipairs(args) do
-        if type(v) == "buffer" then return true end
+        if type(v)=="buffer" then return true end
     end
     return false
 end
@@ -717,18 +767,18 @@ end
 local function getHexFull(args)
     local r = {}
     for i,v in ipairs(args) do
-        if type(v) == "buffer" then
+        if type(v)=="buffer" then
             local len = buffer.len(v)
             local hex,asc = {},{}
-            for j = 0,len-1 do
+            for j=0,len-1 do
                 local b = buffer.readu8(v,j)
-                table.insert(hex, string.format("%02X",b))
-                table.insert(asc, (b>=32 and b<=126) and string.char(b) or ".")
+                table.insert(hex,string.format("%02X",b))
+                table.insert(asc,(b>=32 and b<=126) and string.char(b) or ".")
             end
-            table.insert(r, string.format("[Arg%d %db]\nHEX: %s\nASC: %s",
+            table.insert(r,string.format("[Arg%d %db]\nHEX: %s\nASC: %s",
                 i,len,table.concat(hex," "),table.concat(asc,"")))
         else
-            table.insert(r, "[Arg"..i.."] "..tostring(v))
+            table.insert(r,"[Arg"..i.."] "..tostring(v))
         end
     end
     return table.concat(r,"\n")
@@ -741,53 +791,53 @@ local function addRspyLog(dir, name, path, args)
     if paused then return end
     if blockedRemotes[path] then return end
     local filter = rspySearch.Text:lower()
-    if filter ~= "" and not name:lower():find(filter,1,true) then return end
+    if filter~="" and not name:lower():find(filter,1,true) then return end
 
-    remoteCount[path] = (remoteCount[path] or 0) + 1
+    remoteCount[path] = (remoteCount[path] or 0)+1
     local isBuf   = hasBuffer(args)
     local argsStr = describeArgs(args)
-    local ts      = getTime()
+    local ts      = os.date("%M:%S")
 
     local entry = {
-        dir=dir, name=name, path=path,
-        args=args, argsStr=argsStr,
-        isBuf=isBuf, time=ts
+        dir=dir,name=name,path=path,
+        args=args,argsStr=argsStr,
+        isBuf=isBuf,time=ts
     }
-    table.insert(remoteLogs, 1, entry)
-    if #remoteLogs > maxLogs then table.remove(remoteLogs) end
+    table.insert(remoteLogs,1,entry)
+    if #remoteLogs>maxLogs then table.remove(remoteLogs) end
 
     local dirColor = dir=="C>S" and C.orange
         or dir=="S>C" and C.blue or C.purple
 
     local row = mkFrame(rspyScroll,
-        UDim2.new(1,-4,0,28), nil, C.panel, 3)
+        UDim2.new(1,-4,0,28),nil,C.panel,3)
     row.LayoutOrder = -os.clock()*1000
 
     local dtag = mkFrame(row,
-        UDim2.new(0,30,0,16), UDim2.new(0,3,0,6), dirColor, 3)
-    mkLabel(dtag, dir,
-        UDim2.new(1,0,1,0), nil,
-        C.bg, 9, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
+        UDim2.new(0,30,0,16),UDim2.new(0,3,0,6),dirColor,3)
+    mkLabel(dtag,dir,
+        UDim2.new(1,0,1,0),nil,
+        C.bg,9,Enum.Font.GothamBold,Enum.TextXAlignment.Center)
 
     if isBuf then
         local btag = mkFrame(row,
-            UDim2.new(0,22,0,13), UDim2.new(0,36,0,8), C.purple, 3)
-        mkLabel(btag, "buf",
-            UDim2.new(1,0,1,0), nil,
-            C.white, 8, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
+            UDim2.new(0,22,0,13),UDim2.new(0,36,0,8),C.purple,3)
+        mkLabel(btag,"buf",
+            UDim2.new(1,0,1,0),nil,
+            C.white,8,Enum.Font.GothamBold,Enum.TextXAlignment.Center)
     end
 
     local nx = isBuf and 62 or 36
-    mkLabel(row, name,
-        UDim2.new(0,110,0,14), UDim2.new(0,nx,0,2),
-        C.goldText, 11, Enum.Font.GothamBold)
-    mkLabel(row, argsStr,
+    mkLabel(row,name,
+        UDim2.new(0,110,0,14),UDim2.new(0,nx,0,2),
+        C.goldText,11,Enum.Font.GothamBold)
+    mkLabel(row,argsStr,
         UDim2.new(1,-nx-118,0,13),
         UDim2.new(0,nx+112,0,4),
-        C.dim, 10, Enum.Font.Code)
-    mkLabel(row, ts.." x"..remoteCount[path],
-        UDim2.new(0,65,0,12), UDim2.new(1,-67,0,4),
-        C.dimDark, 9)
+        C.dim,10,Enum.Font.Code)
+    mkLabel(row,ts.." x"..remoteCount[path],
+        UDim2.new(0,65,0,12),UDim2.new(1,-67,0,4),
+        C.dimDark,9)
 
     local rb = Instance.new("TextButton")
     rb.Size = UDim2.new(1,0,1,0)
@@ -797,9 +847,9 @@ local function addRspyLog(dir, name, path, args)
     rb.MouseButton1Click:Connect(function()
         selectedLog = entry
         detailLabel.Text = string.format("[%s] %s | %s\n%s",
-            dir, name, ts, argsStr)
+            dir,name,ts,argsStr)
         for _,c in pairs(rspyScroll:GetChildren()) do
-            if c:IsA("Frame") then c.BackgroundColor3 = C.panel end
+            if c:IsA("Frame") then c.BackgroundColor3=C.panel end
         end
         row.BackgroundColor3 = C.goldBr
     end)
@@ -854,7 +904,7 @@ end)
 
 replayBtn.MouseButton1Click:Connect(function()
     if not selectedLog then return end
-    local r = RS:FindFirstChild(selectedLog.name, true)
+    local r = RS:FindFirstChild(selectedLog.name,true)
     if r and r:IsA("RemoteEvent") then
         pcall(function() r:FireServer(table.unpack(selectedLog.args)) end)
         replayBtn.Text = "✓ Sent!"
@@ -880,7 +930,7 @@ rspySearch:GetPropertyChangedSignal("Text"):Connect(function()
     for _,row in pairs(rspyScroll:GetChildren()) do
         if row:IsA("Frame") then
             for _,child in pairs(row:GetChildren()) do
-                if child:IsA("TextLabel") and child.TextColor3 == C.goldText then
+                if child:IsA("TextLabel") and child.TextColor3==C.goldText then
                     row.Visible = f=="" or child.Text:lower():find(f,1,true)~=nil
                     break
                 end
@@ -902,13 +952,12 @@ _G.consoleClear = function()
     conCount.Text = "0 lines"
 end
 
--- Override print/warn
 local _print = print
 local _warn  = warn
 
 print = function(...)
     local p = {}
-    for _,v in ipairs({...}) do table.insert(p, tostring(v)) end
+    for _,v in ipairs({...}) do table.insert(p,tostring(v)) end
     local msg = table.concat(p,"  ")
     _print(msg)
     addConLog(msg, C.white, "[print]")
@@ -916,7 +965,7 @@ end
 
 warn = function(...)
     local p = {}
-    for _,v in ipairs({...}) do table.insert(p, tostring(v)) end
+    for _,v in ipairs({...}) do table.insert(p,tostring(v)) end
     addConLog(table.concat(p,"  "), C.orange, "[warn]")
 end
 
@@ -929,29 +978,27 @@ local function startHook()
         return
     end
 
-    hookOrig = hookmetamethod(game, "__namecall", function(self, ...)
+    hookOrig = hookmetamethod(game,"__namecall",function(self,...)
         local method = getnamecallmethod()
-        if method == "FireServer" or method == "InvokeServer" then
-            local ok, path = pcall(function() return self:GetFullName() end)
-            if ok then
-                addRspyLog("C>S", self.Name, path, {...})
-            end
+        if method=="FireServer" or method=="InvokeServer" then
+            local ok,path = pcall(function() return self:GetFullName() end)
+            if ok then addRspyLog("C>S",self.Name,path,{...}) end
         end
-        return hookOrig(self, ...)
+        return hookOrig(self,...)
     end)
 
     local function connectRE(v)
         if v:IsA("RemoteEvent") then
             v.OnClientEvent:Connect(function(...)
-                addRspyLog("S>C", v.Name, v:GetFullName(), {...})
+                addRspyLog("S>C",v.Name,v:GetFullName(),{...})
             end)
         end
     end
 
-    for _,v in pairs(game:GetDescendants()) do pcall(connectRE, v) end
+    for _,v in pairs(game:GetDescendants()) do pcall(connectRE,v) end
     game.DescendantAdded:Connect(function(v)
         task.wait()
-        pcall(connectRE, v)
+        pcall(connectRE,v)
     end)
 
     addConLog("Hook aktif! Semua remote dimonitor.", C.green, "[sys]")
@@ -964,7 +1011,7 @@ startHook()
 -- ================================================
 setTab("console")
 
-addConLog("Hub Tools v2.1 loaded!", C.green, "[sys]")
-addConLog("Console = kiri | rSpy = kanan", C.dim, "[sys]")
-addConLog("Tekan ⛶ Full untuk fullsize editor", C.dim, "[sys]")
-addConLog("Drag corner kanan bawah untuk resize", C.dim, "[sys]")
+addConLog("Hub Tools v2.2 loaded!", C.green, "[sys]")
+addConLog("⛶ Full = editor fullsize, tekan lagi untuk exit", C.dim, "[sys]")
+addConLog("Run akan auto exit fullsize & tunjuk result", C.dim, "[sys]")
+addConLog("Drag corner ⤡ untuk resize window", C.dim, "[sys]")
