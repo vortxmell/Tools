@@ -401,30 +401,20 @@ local fullPanel = mkFrame(conContent,
 fullPanel.ClipsDescendants = true
 fullPanel.Visible = false
 
--- Editor container with scroll
-local editorScroll = Instance.new("ScrollingFrame")
-editorScroll.Size = UDim2.new(1,-16,1,-8)
-editorScroll.Position = UDim2.new(0,8,0,4)
-editorScroll.BackgroundColor3 = C.panelDark
-editorScroll.BorderSizePixel = 0
-editorScroll.ScrollBarThickness = 5
-editorScroll.ScrollBarImageColor3 = C.gold
-editorScroll.CanvasSize = UDim2.new(0,0,0,0)
-editorScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-editorScroll.ScrollingDirection = Enum.ScrollingDirection.Y
-editorScroll.ElasticBehavior = Enum.ElasticBehavior.Never
-editorScroll.Parent = fullPanel
-Instance.new("UICorner",editorScroll).CornerRadius = UDim.new(0,6)
-mkStroke(editorScroll, C.goldBr, 1.5)
+-- Simple editor frame (no scroll wrapper)
+local editorFrame = mkFrame(fullPanel,
+    UDim2.new(1,-16,1,-34),
+    UDim2.new(0,8,0,4),
+    C.panelDark, 6)
+mkStroke(editorFrame, C.goldBr, 1.5)
 
--- Full code textbox inside scroll
+-- Full code textbox — fill frame terus
 local fullCodeBox = Instance.new("TextBox")
-fullCodeBox.Size = UDim2.new(1,-8,0,0) -- height auto
+fullCodeBox.Size = UDim2.new(1,-8,1,-8)
 fullCodeBox.Position = UDim2.new(0,4,0,4)
-fullCodeBox.AutomaticSize = Enum.AutomaticSize.Y
 fullCodeBox.BackgroundTransparency = 1
 fullCodeBox.Text = ""
-fullCodeBox.PlaceholderText = "-- Write Lua here...\n-- Paste script panjang pun boleh scroll!"
+fullCodeBox.PlaceholderText = "-- Write Lua here..."
 fullCodeBox.TextColor3 = C.goldText
 fullCodeBox.PlaceholderColor3 = C.dim
 fullCodeBox.TextSize = 12
@@ -434,18 +424,17 @@ fullCodeBox.TextYAlignment = Enum.TextYAlignment.Top
 fullCodeBox.MultiLine = true
 fullCodeBox.ClearTextOnFocus = false
 fullCodeBox.TextWrapped = false
-fullCodeBox.Parent = editorScroll
+fullCodeBox.Parent = editorFrame
 
--- Padding inside editor
 local edPad = Instance.new("UIPadding", fullCodeBox)
 edPad.PaddingLeft = UDim.new(0,4)
 edPad.PaddingTop = UDim.new(0,4)
-edPad.PaddingBottom = UDim.new(0,8)
+edPad.PaddingBottom = UDim.new(0,4)
 
--- Clear editor button (inside fullsize)
-local clearEditorBtn = mkBtn(fullPanel, "🗑 Clear Editor",
-    UDim2.new(0,100,0,22),
-    UDim2.new(1,-108,1,-26),
+-- Bottom bar
+local clearEditorBtn = mkBtn(fullPanel, "🗑 Clear",
+    UDim2.new(0,70,0,26),
+    UDim2.new(0,8,1,-30),
     C.red, C.white, 11)
 clearEditorBtn.ZIndex = 5
 
