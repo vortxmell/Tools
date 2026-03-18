@@ -182,39 +182,29 @@ mainWin.ClipsDescendants = true
 mkStroke(mainWin, C.gold, 1.5)
 
 -- ================================================
--- KEYBOARD FOLLOW v2 (Reliable)
+-- KEYBOARD FOLLOW (Camera ViewportSize)
 -- ================================================
-local kbBaseY   = nil
-local kbActive  = false
+local kbBaseY  = nil
+local kbActive = false
+local cam      = workspace.CurrentCamera
+local lastVpH  = cam.ViewportSize.Y
 
--- Roblox ada built-in event untuk keyboard height
-local function onScreenInsetChanged()
-    local inset = game:GetService("GuiService").BottomBarSize
-    -- inset.Y akan jadi keyboard height bila keyboard buka
-end
+cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+    local newH = cam.ViewportSize.Y
+    local diff = lastVpH - newH
 
--- Cara paling reliable: track ScreenGui.AbsoluteSize
--- Bila keyboard buka, AbsoluteSize.Y akan mengecik
-local lastScreenH = gui.AbsoluteSize.Y
+    if diff > 100 and not kbActive then
+        -- Keyboard buka
+        kbActive = true
+        local absX = mainWin.AbsolutePosition.X
+        local absY = mainWin.AbsolutePosition.Y
+        kbBaseY = absY
 
-gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-    local newH = gui.AbsoluteSize.Y
-    local diff = lastScreenH - newH  -- berapa banyak screen mengecik
+        local newY = math.max(5, absY - diff)
+        mainWin.Position = UDim2.new(0, absX, 0, newY)
 
-    if diff > 100 then
-        -- Keyboard buka — screen mengecik sebanyak diff pixel
-        if not kbActive then
-            kbActive = true
-            local absX = mainWin.AbsolutePosition.X
-            local absY = mainWin.AbsolutePosition.Y
-            kbBaseY = absY  -- simpan Y asal
-
-            -- Gerak window ke atas sebanyak diff
-            local newY = math.max(5, absY - diff)
-            mainWin.Position = UDim2.new(0, absX, 0, newY)
-        end
-    elseif diff < 50 and kbActive then
-        -- Keyboard tutup — screen balik normal
+    elseif diff < -100 and kbActive then
+        -- Keyboard tutup (ViewportSize membesar balik)
         kbActive = false
         if kbBaseY then
             local absX = mainWin.AbsolutePosition.X
@@ -223,7 +213,7 @@ gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
         end
     end
 
-    lastScreenH = newH
+    lastVpH = newH
 end)
 
 -- ================================================
