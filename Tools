@@ -1,6 +1,7 @@
 -- ================================================
 -- rSpy + Custom Console UI
 -- Gold Theme | Universal
+-- v1.1 Fixed
 -- ================================================
 
 local Players = game:GetService("Players")
@@ -9,18 +10,34 @@ local lp = Players.LocalPlayer
 local pgui = lp.PlayerGui
 
 -- ================================================
+-- CLIPBOARD HELPER
+-- ================================================
+local function copyClip(text)
+    if setclipboard then
+        setclipboard(text)
+    elseif toclipboard then
+        toclipboard(text)
+    elseif Clipboard and Clipboard.set then
+        Clipboard.set(text)
+    else
+        _G.lastCopy = text
+        print("[Copy] Saved to _G.lastCopy")
+    end
+end
+
+-- ================================================
 -- STATE
 -- ================================================
-local logs = {}           -- console logs
-local remoteLogs = {}     -- rspy logs
-local remoteCount = {}    -- fire count per remote
-local blockedRemotes = {} -- blocked remote paths
-local capturing = true
+local remoteLogs = {}
+local remoteCount = {}
+local blockedRemotes = {}
 local paused = false
 local consoleAutoScroll = true
 local rspyAutoScroll = true
 local hookOrig = nil
 local maxLogs = 200
+local selectedLog = nil
+local logLines = {}
 
 -- ================================================
 -- COLORS
@@ -40,11 +57,10 @@ local C = {
     white     = Color3.fromRGB(240, 240, 240),
     dim       = Color3.fromRGB(140, 120, 70),
     dimDark   = Color3.fromRGB(80, 65, 30),
-    black     = Color3.fromRGB(0, 0, 0),
 }
 
 -- ================================================
--- HELPER FUNCTIONS
+-- HELPERS
 -- ================================================
 local function getTime()
     local t = os.clock()
@@ -61,9 +77,8 @@ local function describeValue(v)
         for i = 0, math.min(len-1, 8) do
             table.insert(hex, string.format("%02X", buffer.readu8(v, i)))
         end
-        return string.format("<buf:%db>[%s%s]", len,
-            table.concat(hex, " "),
-            len > 9 and "..." or "")
+        return string.format("<buf:%db>[%s%s]",
+            len, table.concat(hex, " "), len > 9 and "..." or "")
     elseif t == "Instance" then
         return "["..v.ClassName.."] "..v:GetFullName()
     elseif t == "Vector3" then
@@ -79,7 +94,7 @@ local function describeValue(v)
                 table.insert(parts, tostring(k).."="..tostring(val))
             end
         end
-        return "{"..table.concat(parts, ", ")..(count > 4 and "..." or).."}"
+        return "{"..table.concat(parts, ", ")..(count > 4 and "..." or "").."}"
     else
         return tostring(v)
     end
@@ -115,10 +130,7 @@ local function getHexFull(args)
             end
             table.insert(result, string.format(
                 "[Arg%d Buffer %db]\nHEX: %s\nASC: %s",
-                i, len,
-                table.concat(hex, " "),
-                table.concat(asc, "")
-            ))
+                i, len, table.concat(hex, " "), table.concat(asc, "")))
         else
             table.insert(result, "[Arg"..i.."] "..tostring(v))
         end
@@ -133,7 +145,7 @@ local existing = pgui:FindFirstChild("rSpyConsole")
 if existing then existing:Destroy() end
 
 -- ================================================
--- MAIN GUI
+-- GUI SETUP
 -- ================================================
 local gui = Instance.new("ScreenGui")
 gui.Name = "rSpyConsole"
@@ -143,7 +155,7 @@ gui.DisplayOrder = 999
 gui.Parent = pgui
 
 -- ================================================
--- UI BUILDER HELPERS
+-- UI BUILDERS
 -- ================================================
 local function mkFrame(parent, size, pos, color, radius)
     local f = Instance.new("Frame")
@@ -152,7 +164,9 @@ local function mkFrame(parent, size, pos, color, radius)
     f.BackgroundColor3 = color or C.panel
     f.BorderSizePixel = 0
     f.Parent = parent
-    if radius then Instance.new("UICorner", f).CornerRadius = UDim.new(0, radius) end
+    if radius then
+        Instance.new("UICorner", f).CornerRadius = UDim.new(0, radius)
+    end
     return f
 end
 
@@ -236,8 +250,7 @@ end
 local function mkTitle(parent, text, height)
     local bar = mkFrame(parent,
         UDim2.new(1,0,0,height or 32),
-        UDim2.new(0,0,0,0),
-        C.gold, 7)
+        UDim2.new(0,0,0,0), C.gold, 7)
     mkLabel(bar, text,
         UDim2.new(1,-10,1,0),
         UDim2.new(0,10,0,0),
@@ -249,109 +262,70 @@ end
 -- ===== rSPY WINDOW =====
 -- ================================================
 local rspyWin = mkFrame(gui,
-    UDim2.new(0, 420, 0, 500),
-    UDim2.new(0, 10, 0.5, -250),
+    UDim2.new(0,420,0,500),
+    UDim2.new(0,10,0.5,-250),
     C.bg, 8)
 rspyWin.Active = true
 rspyWin.Draggable = true
 mkStroke(rspyWin, C.gold)
+mkTitle(rspyWin, "⚡ rSpy  —  Remote Monitor", 32)
 
--- Title
-local rspyTitle = mkTitle(rspyWin, "⚡ rSpy — Remote Monitor", 32)
-
--- Status bar
 local rspyStatus = mkLabel(rspyWin, "● Listening...",
-    UDim2.new(1,-10,0,18),
-    UDim2.new(0,10,0,36),
-    C.green, 11)
+    UDim2.new(1,-10,0,18), UDim2.new(0,10,0,36), C.green, 11)
 
--- Toolbar row 1
-local rspyBar1 = mkFrame(rspyWin,
-    UDim2.new(1,-16,0,26),
-    UDim2.new(0,8,0,58),
-    C.panelDark, 5)
+-- Toolbar
+local rspyBar = mkFrame(rspyWin,
+    UDim2.new(1,-16,0,26), UDim2.new(0,8,0,58), C.panelDark, 5)
 
-local pauseBtn = mkBtn(rspyBar1, "⏸ Pause",
-    UDim2.new(0,72,1,-4),
-    UDim2.new(0,2,0,2),
-    C.orange, C.bg, 11)
+local pauseBtn = mkBtn(rspyBar, "⏸ Pause",
+    UDim2.new(0,72,1,-4), UDim2.new(0,2,0,2), C.orange, C.bg, 11)
+local clearRspyBtn = mkBtn(rspyBar, "🗑 Clear",
+    UDim2.new(0,65,1,-4), UDim2.new(0,78,0,2), C.red, C.white, 11)
+local autoScrollRspyBtn = mkBtn(rspyBar, "↓ Auto",
+    UDim2.new(0,60,1,-4), UDim2.new(0,147,0,2), C.goldBr, C.bg, 11)
+local rspyCountLabel = mkLabel(rspyBar, "0 events",
+    UDim2.new(0,100,1,0), UDim2.new(0,215,0,0), C.dim, 11)
 
-local clearRspyBtn = mkBtn(rspyBar1, "🗑 Clear",
-    UDim2.new(0,65,1,-4),
-    UDim2.new(0,78,0,2),
-    C.red, C.white, 11)
-
-local autoScrollRspyBtn = mkBtn(rspyBar1, "↓ Auto",
-    UDim2.new(0,60,1,-4),
-    UDim2.new(0,147,0,2),
-    C.goldBr, C.bg, 11)
-
-local rspyCountLabel = mkLabel(rspyBar1, "0 events",
-    UDim2.new(0,100,1,0),
-    UDim2.new(0,215,0,0),
-    C.dim, 11)
-
--- Search bar
+-- Search
 local rspySearch = mkInput(rspyWin, "🔍 Filter remote name...",
-    UDim2.new(1,-16,0,24),
-    UDim2.new(0,8,0,88))
+    UDim2.new(1,-16,0,24), UDim2.new(0,8,0,88))
 
 -- Log scroll
-local rspyScroll, rspyLayout = mkScroll(rspyWin,
-    UDim2.new(1,-16,1,-190),
-    UDim2.new(0,8,0,116))
+local rspyScroll = mkScroll(rspyWin,
+    UDim2.new(1,-16,1,-190), UDim2.new(0,8,0,116))
 mkStroke(rspyScroll, C.gold)
 
--- Detail panel (bottom)
+-- Detail panel
 local detailPanel = mkFrame(rspyWin,
-    UDim2.new(1,-16,0,70),
-    UDim2.new(0,8,1,-80),
-    C.panelDark, 5)
+    UDim2.new(1,-16,0,70), UDim2.new(0,8,1,-80), C.panelDark, 5)
 mkStroke(detailPanel, C.goldBr)
 
-local detailLabel = mkLabel(detailPanel, "[ Select a log to see details ]",
-    UDim2.new(1,-8,1,-28),
-    UDim2.new(0,4,0,2),
+local detailLabel = mkLabel(detailPanel,
+    "[ Tap log untuk tengok details ]",
+    UDim2.new(1,-8,1,-30), UDim2.new(0,4,0,2),
     C.dim, 10, Enum.Font.Code)
 detailLabel.TextTruncate = Enum.TextTruncate.None
 detailLabel.TextWrapped = true
 detailLabel.ClipsDescendants = true
 
--- Detail buttons
 local copyHexBtn = mkBtn(detailPanel, "📋 Copy Hex",
-    UDim2.new(0,90,0,22),
-    UDim2.new(0,4,1,-25),
-    C.gold, C.bg, 11)
-
-local replayBtn = mkBtn(detailPanel, "▷ Replay",
-    UDim2.new(0,75,0,22),
-    UDim2.new(0,98,1,-25),
-    C.green, C.bg, 11)
-
+    UDim2.new(0,90,0,22), UDim2.new(0,4,1,-25), C.gold, C.bg, 11)
+local replayRspyBtn = mkBtn(detailPanel, "▷ Replay",
+    UDim2.new(0,75,0,22), UDim2.new(0,98,1,-25), C.green, C.bg, 11)
 local blockBtn = mkBtn(detailPanel, "🚫 Block",
-    UDim2.new(0,70,0,22),
-    UDim2.new(0,177,1,-25),
-    C.red, C.white, 11)
-
+    UDim2.new(0,70,0,22), UDim2.new(0,177,1,-25), C.red, C.white, 11)
 local unblockBtn = mkBtn(detailPanel, "✓ Unblock All",
-    UDim2.new(0,95,0,22),
-    UDim2.new(0,251,1,-25),
-    C.dimDark, C.goldText, 11)
-
--- Selected log state
-local selectedLog = nil
+    UDim2.new(0,95,0,22), UDim2.new(0,251,1,-25), C.dimDark, C.goldText, 11)
 
 -- ================================================
--- rSPY LOG ENTRY BUILDER
+-- rSPY LOG BUILDER
 -- ================================================
-local function addRspyLog(direction, remoteName, remotePath, args, rawBuf)
+local function addRspyLog(direction, remoteName, remotePath, args)
     if paused then return end
     if blockedRemotes[remotePath] then return end
 
-    -- Filter check
     local filter = rspySearch.Text:lower()
-    local nameMatch = remoteName:lower():find(filter, 1, true)
-    if filter ~= "" and not nameMatch then return end
+    if filter ~= "" and not remoteName:lower():find(filter, 1, true) then return end
 
     remoteCount[remotePath] = (remoteCount[remotePath] or 0) + 1
 
@@ -367,68 +341,53 @@ local function addRspyLog(direction, remoteName, remotePath, args, rawBuf)
         argsStr = argsStr,
         isBuf = isBuf,
         time = timestamp,
-        count = remoteCount[remotePath],
-        rawBuf = rawBuf,
     }
     table.insert(remoteLogs, 1, entry)
     if #remoteLogs > maxLogs then
         table.remove(remoteLogs, #remoteLogs)
     end
 
-    -- Color by direction
-    local dirColor = direction == "C→S" and C.orange
-        or direction == "S→C" and C.blue
+    local dirColor = direction == "C\226\134\146S" and C.orange
+        or direction == "S\226\134\146C" and C.blue
         or C.purple
 
-    local row = Instance.new("Frame")
-    row.Size = UDim2.new(1,-4,0,30)
-    row.BackgroundColor3 = C.panel
-    row.BorderSizePixel = 0
-    row.LayoutOrder = #rspyScroll:GetChildren()
-    row.Parent = rspyScroll
-    Instance.new("UICorner", row).CornerRadius = UDim.new(0,3)
+    local order = os.clock() * 1000
+    local row = mkFrame(rspyScroll,
+        UDim2.new(1,-4,0,30), nil, C.panel, 3)
+    row.LayoutOrder = -order
 
     -- Direction tag
-    local dirTag = mkFrame(row, UDim2.new(0,32,0,18),
-        UDim2.new(0,3,0,6), dirColor, 3)
+    local dirTag = mkFrame(row,
+        UDim2.new(0,32,0,18), UDim2.new(0,3,0,6), dirColor, 3)
     mkLabel(dirTag, direction,
-        UDim2.new(1,0,1,0),
-        UDim2.new(0,0,0,0),
-        C.bg, 9, Enum.Font.GothamBold,
-        Enum.TextXAlignment.Center)
+        UDim2.new(1,0,1,0), nil,
+        C.bg, 9, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
 
-    -- Buffer indicator
+    -- Buffer tag
     if isBuf then
-        local bufTag = mkFrame(row, UDim2.new(0,24,0,14),
-            UDim2.new(0,38,0,8), C.purple, 3)
+        local bufTag = mkFrame(row,
+            UDim2.new(0,24,0,14), UDim2.new(0,38,0,8), C.purple, 3)
         mkLabel(bufTag, "buf",
-            UDim2.new(1,0,1,0),
-            UDim2.new(0,0,0,0),
-            C.white, 8, Enum.Font.GothamBold,
-            Enum.TextXAlignment.Center)
+            UDim2.new(1,0,1,0), nil,
+            C.white, 8, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
     end
 
     local nameX = isBuf and 66 or 38
 
-    -- Remote name
     mkLabel(row, remoteName,
-        UDim2.new(0,120,0,16),
-        UDim2.new(0,nameX,0,2),
+        UDim2.new(0,120,0,16), UDim2.new(0,nameX,0,2),
         C.goldText, 11, Enum.Font.GothamBold)
 
-    -- Args preview
     mkLabel(row, argsStr,
         UDim2.new(1,-nameX-130,0,14),
-        UDim2.new(0,nameX+122,0,4),
+        UDim2.new(0,nameX+122,0,5),
         C.dim, 10, Enum.Font.Code)
 
-    -- Timestamp + count
     mkLabel(row, timestamp.." x"..remoteCount[remotePath],
-        UDim2.new(0,70,0,14),
-        UDim2.new(1,-72,0,4),
+        UDim2.new(0,70,0,14), UDim2.new(1,-72,0,5),
         C.dimDark, 9)
 
-    -- Click to select
+    -- Click handler
     local rowBtn = Instance.new("TextButton")
     rowBtn.Size = UDim2.new(1,0,1,0)
     rowBtn.BackgroundTransparency = 1
@@ -437,44 +396,34 @@ local function addRspyLog(direction, remoteName, remotePath, args, rawBuf)
 
     rowBtn.MouseButton1Click:Connect(function()
         selectedLog = entry
-        -- Update detail
-        local detail = string.format("[%s] %s | %s\n%s",
+        detailLabel.Text = string.format("[%s] %s | %s\n%s",
             direction, remoteName, timestamp, argsStr)
-        detailLabel.Text = detail
-
-        -- Highlight selected
         for _, c in pairs(rspyScroll:GetChildren()) do
-            if c:IsA("Frame") then
-                c.BackgroundColor3 = C.panel
-            end
+            if c:IsA("Frame") then c.BackgroundColor3 = C.panel end
         end
         row.BackgroundColor3 = C.goldBr
     end)
 
-    -- Update count label
-    rspyCountLabel.Text = #remoteLogs .. " events"
+    rspyCountLabel.Text = #remoteLogs.." events"
 
-    -- Auto scroll
     if rspyAutoScroll then
         rspyScroll.CanvasPosition = Vector2.new(0, 0)
     end
 end
 
 -- ================================================
--- rSPY CONTROLS
+-- rSPY BUTTON HANDLERS
 -- ================================================
 pauseBtn.MouseButton1Click:Connect(function()
     paused = not paused
     if paused then
         pauseBtn.Text = "▶ Resume"
         pauseBtn.BackgroundColor3 = C.green
-        pauseBtn.TextColor3 = C.bg
         rspyStatus.Text = "⏸ Paused"
         rspyStatus.TextColor3 = C.orange
     else
         pauseBtn.Text = "⏸ Pause"
         pauseBtn.BackgroundColor3 = C.orange
-        pauseBtn.TextColor3 = C.bg
         rspyStatus.Text = "● Listening..."
         rspyStatus.TextColor3 = C.green
     end
@@ -487,7 +436,7 @@ clearRspyBtn.MouseButton1Click:Connect(function()
         if c:IsA("Frame") then c:Destroy() end
     end
     rspyCountLabel.Text = "0 events"
-    detailLabel.Text = "[ Select a log to see details ]"
+    detailLabel.Text = "[ Tap log untuk tengok details ]"
     selectedLog = nil
 end)
 
@@ -499,20 +448,18 @@ end)
 
 copyHexBtn.MouseButton1Click:Connect(function()
     if not selectedLog then return end
-    local hex = getHexFull(selectedLog.args)
-    setclipboard(hex)
+    copyClip(getHexFull(selectedLog.args))
     copyHexBtn.Text = "✓ Copied!"
     task.delay(1.5, function() copyHexBtn.Text = "📋 Copy Hex" end)
 end)
 
-replayBtn.MouseButton1Click:Connect(function()
+replayRspyBtn.MouseButton1Click:Connect(function()
     if not selectedLog then return end
-    local remote = game:FindFirstChild(selectedLog.path, true)
-        or RS:FindFirstChild(selectedLog.name, true)
+    local remote = RS:FindFirstChild(selectedLog.name, true)
     if remote and remote:IsA("RemoteEvent") then
         pcall(function() remote:FireServer(table.unpack(selectedLog.args)) end)
-        replayBtn.Text = "✓ Sent!"
-        task.delay(1, function() replayBtn.Text = "▷ Replay" end)
+        replayRspyBtn.Text = "✓ Sent!"
+        task.delay(1, function() replayRspyBtn.Text = "▷ Replay" end)
     end
 end)
 
@@ -520,30 +467,23 @@ blockBtn.MouseButton1Click:Connect(function()
     if not selectedLog then return end
     blockedRemotes[selectedLog.path] = true
     blockBtn.Text = "🚫 Blocked!"
-    blockBtn.BackgroundColor3 = C.dimDark
-    task.delay(1.5, function()
-        blockBtn.Text = "🚫 Block"
-        blockBtn.BackgroundColor3 = C.red
-    end)
+    task.delay(1.5, function() blockBtn.Text = "🚫 Block" end)
 end)
 
 unblockBtn.MouseButton1Click:Connect(function()
     blockedRemotes = {}
-    unblockBtn.Text = "✓ Unblocked!"
+    unblockBtn.Text = "✓ Done!"
     task.delay(1.5, function() unblockBtn.Text = "✓ Unblock All" end)
 end)
 
--- Search filter
 rspySearch:GetPropertyChangedSignal("Text"):Connect(function()
-    -- Filter visible rows
     local filter = rspySearch.Text:lower()
     for _, row in pairs(rspyScroll:GetChildren()) do
         if row:IsA("Frame") then
-            -- Find name label (3rd child roughly)
             for _, child in pairs(row:GetChildren()) do
                 if child:IsA("TextLabel") and child.TextColor3 == C.goldText then
-                    row.Visible = filter == "" or
-                        child.Text:lower():find(filter, 1, true) ~= nil
+                    row.Visible = filter == ""
+                        or child.Text:lower():find(filter, 1, true) ~= nil
                     break
                 end
             end
@@ -552,124 +492,249 @@ rspySearch:GetPropertyChangedSignal("Text"):Connect(function()
 end)
 
 -- ================================================
--- ===== CUSTOM CONSOLE WINDOW =====
+-- ===== CONSOLE WINDOW =====
 -- ================================================
 local conWin = mkFrame(gui,
-    UDim2.new(0, 400, 0, 380),
-    UDim2.new(1,-420, 0.5, -190),
+    UDim2.new(0,400,0,400),
+    UDim2.new(1,-415,0.5,-200),
     C.bg, 8)
 conWin.Active = true
 conWin.Draggable = true
 mkStroke(conWin, C.gold)
+mkTitle(conWin, "🖥  Console", 32)
 
-mkTitle(conWin, "🖥 Console", 32)
-
--- Toolbar
 local conBar = mkFrame(conWin,
-    UDim2.new(1,-16,0,26),
-    UDim2.new(0,8,0,38),
-    C.panelDark, 5)
+    UDim2.new(1,-16,0,26), UDim2.new(0,8,0,38), C.panelDark, 5)
 
-local clearConBtn = mkBtn(conBar, "🗑 Clear",
-    UDim2.new(0,60,1,-4),
-    UDim2.new(0,2,0,2),
-    C.red, C.white, 11)
-
-local copyAllBtn = mkBtn(conBar, "📋 Copy All",
-    UDim2.new(0,80,1,-4),
-    UDim2.new(0,66,0,2),
-    C.gold, C.bg, 11)
-
+local clearConBtn  = mkBtn(conBar, "🗑 Clear",
+    UDim2.new(0,60,1,-4), UDim2.new(0,2,0,2), C.red, C.white, 11)
+local copyAllBtn   = mkBtn(conBar, "📋 Copy All",
+    UDim2.new(0,80,1,-4), UDim2.new(0,66,0,2), C.gold, C.bg, 11)
 local autoScrollConBtn = mkBtn(conBar, "↓ Auto",
-    UDim2.new(0,58,1,-4),
-    UDim2.new(0,150,0,2),
-    C.goldBr, C.bg, 11)
-
+    UDim2.new(0,58,1,-4), UDim2.new(0,150,0,2), C.goldBr, C.bg, 11)
 local conCountLabel = mkLabel(conBar, "0 lines",
-    UDim2.new(0,80,1,0),
-    UDim2.new(0,215,0,0),
-    C.dim, 11)
+    UDim2.new(0,80,1,0), UDim2.new(0,215,0,0), C.dim, 11)
 
--- Search
 local conSearch = mkInput(conWin, "🔍 Filter logs...",
-    UDim2.new(1,-16,0,24),
-    UDim2.new(0,8,0,68))
+    UDim2.new(1,-16,0,24), UDim2.new(0,8,0,68))
 
--- Log area
-local conScroll, conLayout = mkScroll(conWin,
-    UDim2.new(1,-16,1,-108),
-    UDim2.new(0,8,0,96))
+local conScroll = mkScroll(conWin,
+    UDim2.new(1,-16,1,-110), UDim2.new(0,8,0,96))
 mkStroke(conScroll, C.gold)
 
--- Input bar
 local inputBar = mkFrame(conWin,
-    UDim2.new(1,-16,0,32),
-    UDim2.new(0,8,1,-38),
-    C.panelDark, 5)
-
-local codeInput = mkInput(inputBar, "Execute Lua...",
-    UDim2.new(1,-65,1,-4),
-    UDim2.new(0,2,0,2))
-
-local runBtn = mkBtn(inputBar, "▶ Run",
-    UDim2.new(0,60,1,-4),
-    UDim2.new(1,-62,0,2),
-    C.green, C.bg, 12)
+    UDim2.new(1,-16,0,34), UDim2.new(0,8,1,-40), C.panelDark, 5)
+local codeInput = mkInput(inputBar, "▶ Execute Lua...",
+    UDim2.new(1,-68,1,-4), UDim2.new(0,2,0,2))
+local runBtn = mkBtn(inputBar, "Run",
+    UDim2.new(0,62,1,-4), UDim2.new(1,-64,0,2), C.green, C.bg, 12)
 
 -- ================================================
--- CONSOLE FUNCTIONS
+-- CONSOLE LOG BUILDER
 -- ================================================
-local logLines = {}
-
 local function addConLog(text, color, prefix)
-    local line = {
-        text = text,
-        color = color or C.white,
-        prefix = prefix or "",
-        time = getTime(),
-    }
-    table.insert(logLines, line)
-    if #logLines > maxLogs then
-        table.remove(logLines, 1)
-    end
+    color = color or C.white
+    prefix = prefix or ""
 
-    -- Check filter
+    local line = { text = text, color = color, prefix = prefix, time = getTime() }
+    table.insert(logLines, line)
+    if #logLines > maxLogs then table.remove(logLines, 1) end
+
     local filter = conSearch.Text:lower()
     local visible = filter == "" or text:lower():find(filter, 1, true) ~= nil
 
-    local row = Instance.new("Frame")
-    row.Size = UDim2.new(1,-4,0,20)
+    local order = #logLines
+    local row = mkFrame(conScroll,
+        UDim2.new(1,-4,0,20), nil, C.bg)
     row.BackgroundTransparency = 1
-    row.LayoutOrder = #conScroll:GetChildren()
+    row.LayoutOrder = order
     row.Visible = visible
-    row.Parent = conScroll
 
-    -- Time tag
     mkLabel(row, line.time,
-        UDim2.new(0,36,1,0),
-        UDim2.new(0,2,0,0),
+        UDim2.new(0,36,1,0), UDim2.new(0,2,0,0),
         C.dimDark, 9)
 
-    -- Prefix tag
     if prefix ~= "" then
         mkLabel(row, prefix,
-            UDim2.new(0,30,1,0),
-            UDim2.new(0,40,0,0),
+            UDim2.new(0,40,1,0), UDim2.new(0,40,0,0),
             color, 10, Enum.Font.GothamBold)
     end
 
-    -- Text
-    local textLabel = mkLabel(row, text,
-        UDim2.new(1,-115,1,0),
-        UDim2.new(0,prefix ~= "" and 74 or 44,0,0),
+    local tx = mkLabel(row, text,
+        UDim2.new(1,-120,1,0),
+        UDim2.new(0, prefix ~= "" and 84 or 44, 0, 0),
         color, 11, Enum.Font.Code)
-    textLabel.TextWrapped = false
-    textLabel.TextTruncate = Enum.TextTruncate.AtEnd
+    tx.TextWrapped = false
+    tx.TextTruncate = Enum.TextTruncate.AtEnd
 
-    -- Copy button (hover style — always visible small)
     local cpBtn = mkBtn(row, "⎘",
-        UDim2.new(0,20,0,16),
-        UDim2.new(1,-22,0,2),
+        UDim2.new(0,22,0,16), UDim2.new(1,-24,0,2),
         C.dimDark, C.goldText, 10)
     cpBtn.MouseButton1Click:Connect(function()
-        setclipboard(line.time.." "..p
+        copyClip(line.time.." "..prefix.." "..text)
+        cpBtn.Text = "✓"
+        task.delay(1, function() cpBtn.Text = "⎘" end)
+    end)
+
+    conCountLabel.Text = #logLines.." lines"
+
+    if consoleAutoScroll then
+        task.defer(function()
+            conScroll.CanvasPosition = Vector2.new(0, math.huge)
+        end)
+    end
+end
+
+-- ================================================
+-- OVERRIDE print / warn
+-- ================================================
+local _print = print
+local _warn  = warn
+
+print = function(...)
+    local parts = {}
+    for _, v in ipairs({...}) do table.insert(parts, tostring(v)) end
+    local msg = table.concat(parts, "  ")
+    _print(msg)
+    addConLog(msg, C.white, "[print]")
+end
+
+warn = function(...)
+    local parts = {}
+    for _, v in ipairs({...}) do table.insert(parts, tostring(v)) end
+    local msg = table.concat(parts, "  ")
+    addConLog(msg, C.orange, "[warn]")
+end
+
+-- ================================================
+-- CONSOLE BUTTON HANDLERS
+-- ================================================
+clearConBtn.MouseButton1Click:Connect(function()
+    logLines = {}
+    for _, c in pairs(conScroll:GetChildren()) do
+        if c:IsA("Frame") then c:Destroy() end
+    end
+    conCountLabel.Text = "0 lines"
+end)
+
+copyAllBtn.MouseButton1Click:Connect(function()
+    local lines = {}
+    for _, l in ipairs(logLines) do
+        table.insert(lines, l.time.." "..l.prefix.." "..l.text)
+    end
+    copyClip(table.concat(lines, "\n"))
+    copyAllBtn.Text = "✓ Copied!"
+    task.delay(1.5, function() copyAllBtn.Text = "📋 Copy All" end)
+end)
+
+autoScrollConBtn.MouseButton1Click:Connect(function()
+    consoleAutoScroll = not consoleAutoScroll
+    autoScrollConBtn.BackgroundColor3 = consoleAutoScroll and C.goldBr or C.dimDark
+    autoScrollConBtn.TextColor3 = consoleAutoScroll and C.bg or C.goldText
+end)
+
+conSearch:GetPropertyChangedSignal("Text"):Connect(function()
+    local filter = conSearch.Text:lower()
+    for _, row in pairs(conScroll:GetChildren()) do
+        if row:IsA("Frame") then
+            for _, child in pairs(row:GetChildren()) do
+                if child:IsA("TextLabel") and child.Font == Enum.Font.Code then
+                    row.Visible = filter == ""
+                        or child.Text:lower():find(filter, 1, true) ~= nil
+                    break
+                end
+            end
+        end
+    end
+end)
+
+-- Execute lua
+runBtn.MouseButton1Click:Connect(function()
+    local code = codeInput.Text
+    if code == "" then return end
+    addConLog("> "..code, C.goldText, "[exec]")
+    codeInput.Text = ""
+    local fn, err = loadstring(code)
+    if fn then
+        local ok, res = pcall(fn)
+        if ok then
+            if res ~= nil then
+                addConLog(tostring(res), C.green, "[ok]")
+            end
+        else
+            addConLog(tostring(res), C.red, "[err]")
+        end
+    else
+        addConLog(tostring(err), C.red, "[err]")
+    end
+end)
+
+codeInput.FocusLost:Connect(function(enter)
+    if enter then
+        runBtn.MouseButton1Click:Fire()
+    end
+end)
+
+-- ================================================
+-- _G EXPORTS
+-- ================================================
+_G.log = addConLog
+_G.consoleLogs = logLines
+_G.consoleClear = function()
+    logLines = {}
+    for _, c in pairs(conScroll:GetChildren()) do
+        if c:IsA("Frame") then c:Destroy() end
+    end
+    conCountLabel.Text = "0 lines"
+end
+
+-- ================================================
+-- HOOK ALL REMOTES
+-- ================================================
+local function startHook()
+    if not hookmetamethod then
+        addConLog("hookmetamethod tidak tersedia!", C.red, "[err]")
+        return
+    end
+
+    hookOrig = hookmetamethod(game, "__namecall", function(self, ...)
+        local method = getnamecallmethod()
+        if method == "FireServer" or method == "InvokeServer" then
+            local ok, path = pcall(function() return self:GetFullName() end)
+            if ok then
+                addRspyLog("C\226\134\146S", self.Name, path, {...})
+            end
+        end
+        return hookOrig(self, ...)
+    end)
+
+    -- OnClientEvent
+    local function connectRE(v)
+        if v:IsA("RemoteEvent") then
+            v.OnClientEvent:Connect(function(...)
+                addRspyLog("S\226\134\146C", v.Name, v:GetFullName(), {...})
+            end)
+        end
+    end
+
+    for _, v in pairs(game:GetDescendants()) do
+        pcall(connectRE, v)
+    end
+
+    game.DescendantAdded:Connect(function(v)
+        task.wait()
+        pcall(connectRE, v)
+    end)
+
+    addConLog("Hook aktif! Semua remote sedang dimonitor.", C.green, "[sys]")
+end
+
+startHook()
+
+-- ================================================
+-- WELCOME
+-- ================================================
+addConLog("rSpy + Console v1.1 loaded!", C.green, "[sys]")
+addConLog("print() dan warn() akan appear di sini", C.dim, "[sys]")
+addConLog("Guna input bar bawah untuk execute Lua", C.dim, "[sys]")
+addConLog("_G.log('msg') untuk custom log", C.dim, "[sys]")
