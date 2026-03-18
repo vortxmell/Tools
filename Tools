@@ -182,44 +182,48 @@ mainWin.ClipsDescendants = true
 mkStroke(mainWin, C.gold, 1.5)
 
 -- ================================================
--- KEYBOARD FOLLOW (Simple & Safe)
+-- KEYBOARD FOLLOW v2 (Reliable)
 -- ================================================
-local kbBasePos = nil
+local kbBaseY   = nil
 local kbActive  = false
 
-UIS.TextBoxFocused:Connect(function()
-    if kbActive then return end
-    task.wait(0.25) -- tunggu keyboard animate
-    kbActive = true
+-- Roblox ada built-in event untuk keyboard height
+local function onScreenInsetChanged()
+    local inset = game:GetService("GuiService").BottomBarSize
+    -- inset.Y akan jadi keyboard height bila keyboard buka
+end
 
-    local cam      = workspace.CurrentCamera
-    local screenH  = cam.ViewportSize.Y
-    local kbH      = screenH * 0.42  -- anggaran keyboard height mobile
-    local visibleH = screenH - kbH
+-- Cara paling reliable: track ScreenGui.AbsoluteSize
+-- Bila keyboard buka, AbsoluteSize.Y akan mengecik
+local lastScreenH = gui.AbsoluteSize.Y
 
-    local absY     = mainWin.AbsolutePosition.Y
-    local absX     = mainWin.AbsolutePosition.X
-    local winH     = mainWin.AbsoluteSize.Y
-    local winBot   = absY + winH
+gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+    local newH = gui.AbsoluteSize.Y
+    local diff = lastScreenH - newH  -- berapa banyak screen mengecik
 
-    -- Simpan posisi asal (pixel)
-    kbBasePos = {x = absX, y = absY}
+    if diff > 100 then
+        -- Keyboard buka — screen mengecik sebanyak diff pixel
+        if not kbActive then
+            kbActive = true
+            local absX = mainWin.AbsolutePosition.X
+            local absY = mainWin.AbsolutePosition.Y
+            kbBaseY = absY  -- simpan Y asal
 
-    -- Gerak ke atas kalau window terlindung keyboard
-    if winBot > visibleH then
-        local newY = math.max(5, visibleH - winH - 5)
-        mainWin.Position = UDim2.new(0, absX, 0, newY)
+            -- Gerak window ke atas sebanyak diff
+            local newY = math.max(5, absY - diff)
+            mainWin.Position = UDim2.new(0, absX, 0, newY)
+        end
+    elseif diff < 50 and kbActive then
+        -- Keyboard tutup — screen balik normal
+        kbActive = false
+        if kbBaseY then
+            local absX = mainWin.AbsolutePosition.X
+            mainWin.Position = UDim2.new(0, absX, 0, kbBaseY)
+            kbBaseY = nil
+        end
     end
-end)
 
-UIS.TextBoxFocusReleased:Connect(function()
-    task.wait(0.1)
-    kbActive = false
-    -- Restore posisi asal
-    if kbBasePos then
-        mainWin.Position = UDim2.new(0, kbBasePos.x, 0, kbBasePos.y)
-        kbBasePos = nil
-    end
+    lastScreenH = newH
 end)
 
 -- ================================================
