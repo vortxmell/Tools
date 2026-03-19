@@ -8,11 +8,8 @@ local RS      = game:GetService("ReplicatedStorage")
 local UIS     = game:GetService("UserInputService")
 local lp      = Players.LocalPlayer
 local pgui    = lp.PlayerGui
-local guiParent = pgui
 
 -- ── cloneref — wrap semua service references ──
--- Prevent anti-cheat dari detect direct service access
--- Fallback kalau cloneref tak available
 local _cloneref = cloneref or function(x) return x end
 
 local _Players = _cloneref(Players)
@@ -20,7 +17,22 @@ local _RS      = _cloneref(RS)
 local _UIS     = _cloneref(UIS)
 local _lp      = _cloneref(lp)
 local _pgui    = _cloneref(pgui)
-guiParent      = _pgui
+
+-- ── gethui() — hidden UI container ──
+-- Game scripts tak boleh detect, access, atau destroy GUI dalam gethui()
+-- Lebih selamat dari PlayerGui dan CoreGui
+local guiParent
+if gethui then
+    guiParent = gethui()  -- Delta hidden UI — paling selamat
+elseif pcall(function()
+    local test = Instance.new("Frame")
+    test.Parent = game:GetService("CoreGui")
+    test:Destroy()
+end) then
+    guiParent = game:GetService("CoreGui")  -- fallback CoreGui
+else
+    guiParent = _pgui  -- last resort PlayerGui
+end
 
 -- Randomize GUI name supaya anti-cheat tak detect by name
 local function randomString(len)
