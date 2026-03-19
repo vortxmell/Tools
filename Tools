@@ -1543,6 +1543,8 @@ _G.consoleClear = function()
 end
 -- Debug exports — boleh check dari console
 _G.getSelectedLog = function() return selectedLog end
+_G.replayBtn = replayBtn
+_G.spamToggleBtn = spamToggleBtn
 _G.testReplay = function()
     if not selectedLog then
         print("selectedLog nil!")
