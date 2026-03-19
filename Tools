@@ -27,7 +27,6 @@ local paused         = true   -- default stopped, kena tekan Play dulu
 local dirFilter      = "both" -- "both", "cs", "sc"
 local rspyAutoScroll = true
 local conAutoScroll  = true
-local hookOrig       = nil
 local maxLogs        = 300
 local selectedLog    = nil
 local logLines       = {}
@@ -357,7 +356,12 @@ minBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
+closeBtn.MouseButton1Click:Connect(function()
+    -- Pastikan rSpy paused dulu sebelum destroy
+    -- supaya hook callback tak buat apa-apa lepas GUI gone
+    paused = true
+    gui:Destroy()
+end)
 
 -- ================================================
 -- ===== CONSOLE TAB =====
@@ -1087,45 +1091,70 @@ end
 
 -- ================================================
 -- HOOK ALL REMOTES
--- FIX: addRspyLog wrapped in pcall supaya kalau
--- ada error dalam logging, game remote calls
--- tak kena drop / interrupt.
+-- SAFE VERSION: Buang hookmetamethod global.
+-- hookmetamethod wrap SEMUA __namecall calls —
+-- terlalu heavy, boleh cause timing issue pada
+-- game yang ada server-side rate/sequence check
+-- (contoh: PlayerStepAdd).
+--
+-- Ganti dengan:
+-- C>S → wrap FireServer terus pada setiap remote
+-- S>C → OnClientEvent (dah sedia safe)
+-- paused flag = gate, kalau paused terus return
 -- ================================================
 local function startHook()
-    if not hookmetamethod then
-        addConLog("hookmetamethod tidak tersedia!", C.red, "[err]")
-        return
-    end
+    -- Wrap FireServer terus pada remote tu
+    -- Tak touch __namecall global langsung
+    local function hookRemote(v)
+        if not v:IsA("RemoteEvent") and not v:IsA("RemoteFunction") then return end
 
-    hookOrig = hookmetamethod(game, "__namecall", function(self, ...)
-        local method = getnamecallmethod()
-        if method == "FireServer" or method == "InvokeServer" then
-            local ok, path = pcall(function() return self:GetFullName() end)
-            if ok then
-                -- FIX: pcall pada addRspyLog — kalau logging error,
-                -- game remote call still proceed macam biasa
-                pcall(addRspyLog, "C>S", self.Name, path, {...})
-            end
-        end
-        return hookOrig(self, ...)
-    end)
+        local path = ""
+        pcall(function() path = v:GetFullName() end)
 
-    local function connectRE(v)
+        -- S>C — selamat, tak interfere game
         if v:IsA("RemoteEvent") then
             v.OnClientEvent:Connect(function(...)
-                -- FIX: sama, pcall protect logging S>C
-                pcall(addRspyLog, "S>C", v.Name, v:GetFullName(), {...})
+                if paused then return end
+                pcall(addRspyLog, "S>C", v.Name, path, {...})
             end)
+        end
+
+        -- C>S — wrap FireServer/InvokeServer pada remote specific
+        -- lebih selamat dari hook global __namecall
+        local origFire = v.FireServer
+        if origFire then
+            v.FireServer = newcclosure(function(self, ...)
+                if not paused then
+                    pcall(addRspyLog, "C>S", v.Name, path, {...})
+                end
+                return origFire(self, ...)  -- game call tetap jalan
+            end)
+        end
+
+        if v:IsA("RemoteFunction") then
+            local origInvoke = v.InvokeServer
+            if origInvoke then
+                v.InvokeServer = newcclosure(function(self, ...)
+                    if not paused then
+                        pcall(addRspyLog, "C>S", v.Name, path, {...})
+                    end
+                    return origInvoke(self, ...)
+                end)
+            end
         end
     end
 
-    for _,v in pairs(game:GetDescendants()) do pcall(connectRE,v) end
+    for _,v in pairs(game:GetDescendants()) do
+        pcall(hookRemote, v)
+    end
+
     game.DescendantAdded:Connect(function(v)
         task.wait()
-        pcall(connectRE,v)
+        pcall(hookRemote, v)
     end)
 
     addConLog("Hook aktif! Semua remote dimonitor.", C.green, "[sys]")
+    addConLog("Safe mode: per-remote hook (no __namecall)", C.dim, "[sys]")
 end
 
 startHook()
