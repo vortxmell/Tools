@@ -964,7 +964,7 @@ end
 -- rSPY LOG BUILDER
 -- Hook sentiasa capture. rspyVisible = display control je.
 -- ================================================
-local function addRspyLog(dir, name, path, args)
+local function addRspyLog(dir, name, path, args, returnVal)
     -- rspyVisible = false means user stopped display, skip
     if not rspyVisible then return end
     if dirFilter=="cs" and dir~="C>S" then return end
@@ -981,29 +981,43 @@ local function addRspyLog(dir, name, path, args)
     local argsStr = describeArgs(args)
     local ts      = os.date("%M:%S")
 
+    -- Describe return value
+    local retStr = nil
+    if returnVal ~= nil then
+        retStr = describeValue(returnVal)
+    end
+
     local entry = {
         dir=dir, name=name, path=path,
         args=args, argsStr=argsStr,
-        isBuf=isBuf, time=ts, intervalMs=intervalMs
+        isBuf=isBuf, time=ts, intervalMs=intervalMs,
+        returnVal=returnVal, retStr=retStr
     }
     table.insert(remoteLogs,1,entry)
     if #remoteLogs>maxLogs then table.remove(remoteLogs) end
 
     local dirColor = dir=="C>S" and C.orange or dir=="S>C" and C.blue or C.purple
 
-    local row = mkFrame(rspyScroll,UDim2.new(1,-4,0,34),nil,C.panel,3)
+    -- Kalau ada return value, row height lebih tinggi sikit
+    local rowH = retStr and 48 or 34
+    local row = mkFrame(rspyScroll,UDim2.new(1,-4,0,rowH),nil,C.panel,3)
     row.LayoutOrder = -os.clock()*1000
 
     -- Dir tag
     local dtag = mkFrame(row,UDim2.new(0,28,0,14),UDim2.new(0,3,0,2),dirColor,3)
     mkLabel(dtag,dir,UDim2.new(1,0,1,0),nil,C.bg,8,Enum.Font.GothamBold,Enum.TextXAlignment.Center)
 
-    -- Buf tag
+    -- Invoke tag (kalau InvokeServer)
     local nameX = 34
     if isBuf then
         local btag = mkFrame(row,UDim2.new(0,20,0,12),UDim2.new(0,34,0,3),C.purple,3)
         mkLabel(btag,"buf",UDim2.new(1,0,1,0),nil,C.white,7,Enum.Font.GothamBold,Enum.TextXAlignment.Center)
         nameX = 57
+    end
+    if retStr then
+        local itag = mkFrame(row,UDim2.new(0,26,0,12),UDim2.new(0,nameX,0,3),Color3.fromRGB(0,180,120),3)
+        mkLabel(itag,"inv",UDim2.new(1,0,1,0),nil,C.white,7,Enum.Font.GothamBold,Enum.TextXAlignment.Center)
+        nameX = nameX + 29
     end
 
     -- Interval badge
@@ -1016,13 +1030,23 @@ local function addRspyLog(dir, name, path, args)
     mkLabel(row,name,UDim2.new(1,-nameX-90,0,14),UDim2.new(0,nameX,0,2),C.goldText,11,Enum.Font.GothamBold)
     mkLabel(row,argsStr,UDim2.new(1,-8,0,13),UDim2.new(0,4,0,18),C.white,9,Enum.Font.Code)
 
+    -- Return value line (kalau ada)
+    if retStr then
+        local retRow = mkFrame(row,UDim2.new(1,-8,0,13),UDim2.new(0,4,0,32),Color3.fromRGB(0,30,20),3)
+        mkLabel(retRow,"↩ "..retStr,UDim2.new(1,-4,1,0),UDim2.new(0,2,0,0),Color3.fromRGB(0,220,140),9,Enum.Font.Code)
+    end
+
     local rb = Instance.new("TextButton")
     rb.Size = UDim2.new(1,0,1,0); rb.BackgroundTransparency = 1; rb.Text = ""; rb.Parent = row
     rb.MouseButton1Click:Connect(function()
         selectedLog = entry
 
         local cStr = intervalMs and (intervalMs>=1000 and string.format("%.2fs",intervalMs/1000) or intervalMs.."ms") or "first"
-        detailLabel.Text = string.format("[%s] %s  %s\n%s\n\nArgs: %s",dir,name,cStr,path,argsStr)
+        local detailText = string.format("[%s] %s  %s\n%s\n\nArgs: %s",dir,name,cStr,path,argsStr)
+        if retStr then
+            detailText = detailText.."\n\n↩ Return:\n"..retStr
+        end
+        detailLabel.Text = detailText
 
         -- Populate args editor
         local edLines={}
@@ -1359,14 +1383,21 @@ local function startHook()
         -- Original call DULU — zero interference
         local result = hookOrig(self,...)
 
-        -- Log semua remote tanpa kira sumber (termasuk IY, console lain, dll)
-        if method=="FireServer"
-        or method=="InvokeServer"
-        or method=="FireUnreliableServer" then
+        -- Log semua remote tanpa kira sumber
+        if method=="FireServer" or method=="FireUnreliableServer" then
             local name = self.Name
             local ok,path = pcall(function() return self:GetFullName() end)
             if ok then
                 task.defer(function() pcall(addRspyLog,"C>S",name,path,args) end)
+            end
+        elseif method=="InvokeServer" then
+            -- InvokeServer ada return value dari server
+            local name = self.Name
+            local ok,path = pcall(function() return self:GetFullName() end)
+            if ok then
+                -- Pass result sebagai returnVal
+                local retVal = result
+                task.defer(function() pcall(addRspyLog,"C>S",name,path,args,retVal) end)
             end
         end
 
