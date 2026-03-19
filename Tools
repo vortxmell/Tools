@@ -733,22 +733,103 @@ local exportBtn = mkBtn(leftBottomBar, "📤 Export All",
     UDim2.new(1,-114,1,-4), UDim2.new(0,64,0,2),
     C.goldBr, C.bg, 11)
 
--- RIGHT PANEL — detail view
+-- RIGHT PANEL — smart detail + replay/spam
 local rightPanel = mkFrame(rspyContent,
     UDim2.new(0.5,-8,1,-SPLIT_TOP-SPLIT_BOT),
     UDim2.new(0.5,GAP,0,SPLIT_TOP),
     C.panelDark, 5)
 mkStroke(rightPanel, C.goldBr)
 
-local detailLabel = mkLabel(rightPanel,
-    "[ Tap log\nuntuk detail ]",
+-- Section 1: Info (atas) — 60px
+local infoPanel = mkFrame(rightPanel,
+    UDim2.new(1,-8,0,62),
+    UDim2.new(0,4,0,4),
+    C.bg, 4)
+mkStroke(infoPanel, C.gold, 1)
+
+local detailLabel = mkLabel(infoPanel,
+    "[ Tap log untuk detail ]",
     UDim2.new(1,-8,1,-8),
     UDim2.new(0,4,0,4),
-    C.white, 10, Enum.Font.Code)
+    C.white, 9, Enum.Font.Code)
 detailLabel.TextTruncate = Enum.TextTruncate.None
 detailLabel.TextWrapped = true
-detailLabel.ClipsDescendants = true
 detailLabel.TextYAlignment = Enum.TextYAlignment.Top
+
+-- Section 2: Args Editor
+local argsEditorLabel = mkLabel(rightPanel,
+    "ARGS EDITOR",
+    UDim2.new(1,-8,0,12),
+    UDim2.new(0,4,0,70),
+    C.goldText, 9, Enum.Font.GothamBold)
+
+local argsEditorFrame = mkFrame(rightPanel,
+    UDim2.new(1,-8,0,58),
+    UDim2.new(0,4,0,84),
+    C.bg, 4)
+mkStroke(argsEditorFrame, C.gold, 1)
+
+local argsEditor = Instance.new("TextBox")
+argsEditor.Size = UDim2.new(1,-8,1,-8)
+argsEditor.Position = UDim2.new(0,4,0,4)
+argsEditor.BackgroundTransparency = 1
+argsEditor.Text = ""
+argsEditor.PlaceholderText = '-- one arg per line\n"string"\n123\ntrue'
+argsEditor.TextColor3 = C.white
+argsEditor.PlaceholderColor3 = C.dim
+argsEditor.TextSize = 10
+argsEditor.Font = Enum.Font.Code
+argsEditor.TextXAlignment = Enum.TextXAlignment.Left
+argsEditor.TextYAlignment = Enum.TextYAlignment.Top
+argsEditor.MultiLine = true
+argsEditor.ClearTextOnFocus = false
+argsEditor.TextWrapped = false
+argsEditor.Parent = argsEditorFrame
+
+-- Section 3: Action buttons — Replay + Spam toggle
+local actionBar = mkFrame(rightPanel,
+    UDim2.new(1,-8,0,26),
+    UDim2.new(0,4,0,146),
+    C.bg, 4)
+
+local replayBtn = mkBtn(actionBar, "▶ Replay Once",
+    UDim2.new(0.5,-3,1,-4), UDim2.new(0,2,0,2),
+    C.green, C.bg, 11)
+
+local spamToggleBtn = mkBtn(actionBar, "⏱ Spam",
+    UDim2.new(0.5,-3,1,-4), UDim2.new(0.5,1,0,2),
+    C.gold, C.bg, 11)
+
+-- Section 4: Spam panel (hidden by default)
+local spamPanel = mkFrame(rightPanel,
+    UDim2.new(1,-8,0,52),
+    UDim2.new(0,4,0,176),
+    C.bg, 4)
+mkStroke(spamPanel, C.orange, 1)
+spamPanel.Visible = false
+
+-- Interval row
+mkLabel(spamPanel, "Interval (ms):",
+    UDim2.new(0,80,0,20), UDim2.new(0,4,0,4),
+    C.goldText, 10)
+
+local intervalInput = mkInput(spamPanel, "350",
+    UDim2.new(0,60,0,20), UDim2.new(0,86,0,4))
+intervalInput.TextSize = 11
+
+local spamStartBtn = mkBtn(spamPanel, "▶ Start",
+    UDim2.new(0,52,0,20), UDim2.new(1,-110,0,4),
+    C.green, C.bg, 11)
+
+local spamStopBtn = mkBtn(spamPanel, "⏹ Stop",
+    UDim2.new(0,52,0,20), UDim2.new(1,-56,0,4),
+    C.red, C.white, 11)
+spamStopBtn.Visible = false
+
+-- Count label
+local spamCountLabel = mkLabel(spamPanel, "Fired: 0",
+    UDim2.new(1,-8,0,16), UDim2.new(0,4,0,30),
+    C.white, 10)
 
 -- RIGHT bottom bar — Export + Copy Script
 local rightBottomBar = mkFrame(rspyContent,
@@ -934,14 +1015,39 @@ local function addRspyLog(dir, name, path, args)
     rb.Parent = row
     rb.MouseButton1Click:Connect(function()
         selectedLog = entry
+
+        -- Update info panel
         local cooldownStr = entry.intervalMs and (
             entry.intervalMs >= 1000
             and string.format("%.2fs", entry.intervalMs/1000)
             or entry.intervalMs.."ms"
-        ) or "first fire"
+        ) or "first"
         detailLabel.Text = string.format(
-            "[%s] %s\n%s\n\nPath:\n%s\n\nArgs:\n%s\n\nInterval: %s",
-            dir, name, ts, path, argsStr, cooldownStr)
+            "[%s] %s  %s\n%s\n\nArgs: %s",
+            dir, name, cooldownStr, path, argsStr)
+
+        -- Auto-populate args editor — satu arg satu baris
+        local editorLines = {}
+        for _, v in ipairs(entry.args or {}) do
+            local t = type(v)
+            if t == "string" then
+                table.insert(editorLines, '"'..v:gsub('"', '\\"')..'"')
+            elseif t == "number" or t == "boolean" then
+                table.insert(editorLines, tostring(v))
+            elseif t == "buffer" then
+                table.insert(editorLines, "-- <buffer>")
+            else
+                table.insert(editorLines, "-- "..tostring(v))
+            end
+        end
+        argsEditor.Text = table.concat(editorLines, "\n")
+
+        -- Auto-fill interval input dari cooldown tracker
+        if entry.intervalMs and entry.intervalMs > 0 then
+            intervalInput.Text = tostring(entry.intervalMs)
+        end
+
+        -- Highlight row
         for _,c in pairs(rspyScroll:GetChildren()) do
             if c:IsA("Frame") then c.BackgroundColor3=C.panel end
         end
@@ -977,13 +1083,148 @@ end)
 clearRspyBtn.MouseButton1Click:Connect(function()
     remoteLogs = {}
     remoteCount = {}
-    remoteLastFire = {}  -- reset cooldown tracker
+    remoteLastFire = {}
     for _,c in pairs(rspyScroll:GetChildren()) do
         if c:IsA("Frame") then c:Destroy() end
     end
     rspyCount.Text = "0 events"
-    detailLabel.Text = "[ Tap log\nuntuk detail ]"
+    detailLabel.Text = "[ Tap log untuk detail ]"
+    argsEditor.Text = ""
     selectedLog = nil
+end)
+
+-- ================================================
+-- REPLAY / SPAM LOGIC
+-- ================================================
+
+-- Parse args editor text → table of Lua values
+local function parseArgsEditor()
+    local result = {}
+    for line in argsEditor.Text:gmatch("[^\n]+") do
+        line = line:match("^%s*(.-)%s*$") -- trim
+        if line == "" or line:sub(1,2) == "--" then
+            -- skip empty lines and comments
+        elseif line == "true" then
+            table.insert(result, true)
+        elseif line == "false" then
+            table.insert(result, false)
+        elseif tonumber(line) then
+            table.insert(result, tonumber(line))
+        elseif line:sub(1,1) == '"' and line:sub(-1) == '"' then
+            -- strip surrounding quotes, unescape
+            table.insert(result, line:sub(2,-2):gsub('\\"', '"'))
+        else
+            -- raw string fallback
+            table.insert(result, line)
+        end
+    end
+    return result
+end
+
+-- Fire remote dengan parsed args
+local function fireRemote(log, args)
+    if not log then return false, "No remote selected" end
+    local remote = nil
+    local ok, err = pcall(function()
+        -- Walk path to find remote
+        local parts = {}
+        for p in log.path:gmatch("[^%.]+") do
+            table.insert(parts, p)
+        end
+        local obj = game:GetService(parts[1])
+        for i = 2, #parts do
+            obj = obj:WaitForChild(parts[i], 3)
+        end
+        remote = obj
+    end)
+    if not ok or not remote then
+        return false, "Remote not found: "..(err or "")
+    end
+    local fireOk, fireErr = pcall(function()
+        remote:FireServer(table.unpack(args))
+    end)
+    return fireOk, fireErr
+end
+
+-- Spam state
+local spamActive   = false
+local spamThread   = nil
+local spamCount    = 0
+local spamPanelOpen = false
+
+-- Toggle spam panel visibility
+spamToggleBtn.MouseButton1Click:Connect(function()
+    spamPanelOpen = not spamPanelOpen
+    spamPanel.Visible = spamPanelOpen
+    spamToggleBtn.BackgroundColor3 = spamPanelOpen and C.orange or C.gold
+    spamToggleBtn.TextColor3 = spamPanelOpen and C.bg or C.bg
+    spamToggleBtn.Text = spamPanelOpen and "⏱ Spam ▲" or "⏱ Spam"
+end)
+
+-- Replay Once
+replayBtn.MouseButton1Click:Connect(function()
+    if not selectedLog then
+        replayBtn.Text = "Select log!"
+        task.delay(1.5, function() replayBtn.Text = "▶ Replay Once" end)
+        return
+    end
+    local args = parseArgsEditor()
+    local ok, err = fireRemote(selectedLog, args)
+    if ok then
+        replayBtn.Text = "✓ Fired!"
+        task.delay(1, function() replayBtn.Text = "▶ Replay Once" end)
+    else
+        replayBtn.Text = "✗ Error"
+        addConLog("Replay error: "..tostring(err), C.red, "[rspy]")
+        task.delay(2, function() replayBtn.Text = "▶ Replay Once" end)
+    end
+end)
+
+-- Spam Start
+spamStartBtn.MouseButton1Click:Connect(function()
+    if not selectedLog then
+        spamStartBtn.Text = "Select log!"
+        task.delay(1.5, function() spamStartBtn.Text = "▶ Start" end)
+        return
+    end
+    if spamActive then return end
+
+    local ms = tonumber(intervalInput.Text) or 350
+    if ms < 50 then ms = 50 end  -- minimum 50ms, elak crash
+
+    spamActive = true
+    spamCount  = 0
+    spamStartBtn.Visible = false
+    spamStopBtn.Visible  = true
+    spamCountLabel.Text  = "Fired: 0"
+    spamToggleBtn.BackgroundColor3 = C.red
+
+    spamThread = task.spawn(function()
+        while spamActive do
+            local args = parseArgsEditor()
+            local ok, err = fireRemote(selectedLog, args)
+            if ok then
+                spamCount += 1
+                spamCountLabel.Text = "Fired: "..spamCount
+            else
+                -- Auto stop kalau remote error
+                spamActive = false
+                addConLog("Spam stopped — error: "..tostring(err), C.red, "[rspy]")
+                break
+            end
+            task.wait(ms / 1000)
+        end
+        -- Cleanup UI
+        spamStartBtn.Visible = true
+        spamStopBtn.Visible  = false
+        spamToggleBtn.BackgroundColor3 = spamPanelOpen and C.orange or C.gold
+    end)
+end)
+
+-- Spam Stop
+spamStopBtn.MouseButton1Click:Connect(function()
+    spamActive = false
+    addConLog("Spam stopped. Total fired: "..spamCount, C.green, "[rspy]")
 end)
 
 asRspyBtn.MouseButton1Click:Connect(function()
