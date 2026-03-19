@@ -749,15 +749,19 @@ detailLabel.TextWrapped = true
 detailLabel.ClipsDescendants = true
 detailLabel.TextYAlignment = Enum.TextYAlignment.Top
 
--- RIGHT bottom bar (block/unblock removed, only Export Selected)
+-- RIGHT bottom bar — Export + Copy Script
 local rightBottomBar = mkFrame(rspyContent,
     UDim2.new(0.5,-8,0,SPLIT_BOT-4),
     UDim2.new(0.5,GAP,1,-SPLIT_BOT),
     C.panelDark, 5)
 
-local exportSelBtn = mkBtn(rightBottomBar, "📤 Export Selected",
-    UDim2.new(1,-8,1,-4), UDim2.new(0,4,0,2),
+local exportSelBtn = mkBtn(rightBottomBar, "📤 Export",
+    UDim2.new(0.5,-6,1,-4), UDim2.new(0,4,0,2),
     C.goldBr, C.bg, 11)
+
+local copyScriptBtn = mkBtn(rightBottomBar, "📋 Copy Script",
+    UDim2.new(0.5,-6,1,-4), UDim2.new(0.5,2,0,2),
+    C.gold, C.bg, 11)
 
 -- ================================================
 -- rSPY HELPERS
@@ -1092,7 +1096,75 @@ exportSelBtn.MouseButton1Click:Connect(function()
 
     copyClip(table.concat(lines, "\n"))
     exportSelBtn.Text = "✓ Copied!"
-    task.delay(2, function() exportSelBtn.Text = "📤 Export Selected" end)
+    task.delay(2, function() exportSelBtn.Text = "📤 Export" end)
+end)
+
+-- Copy Script only (no metadata header)
+copyScriptBtn.MouseButton1Click:Connect(function()
+    if not selectedLog then
+        copyScriptBtn.Text = "Select first!"
+        task.delay(1.5, function() copyScriptBtn.Text = "📋 Copy Script" end)
+        return
+    end
+
+    local function buildChain(path)
+        local parts = {}
+        for part in path:gmatch("[^%.]+") do
+            table.insert(parts, part)
+        end
+        if #parts == 0 then return nil end
+        local chain = string.format("game:GetService(\"%s\")", parts[1])
+        for i = 2, #parts do
+            chain = chain .. string.format(":WaitForChild(\"%s\")", parts[i])
+        end
+        return chain
+    end
+
+    local function buildArgsLines(args)
+        if not args or #args == 0 then return nil end
+        local out = {}
+        for _, v in ipairs(args) do
+            local t = type(v)
+            if t == "string" then
+                table.insert(out, string.format("\t\"%s\"", v:gsub("\"", "\\"")))
+            elseif t == "number" or t == "boolean" then
+                table.insert(out, "\t"..tostring(v))
+            elseif t == "buffer" then
+                table.insert(out, "\t-- <buffer> semak Hex panel")
+            else
+                table.insert(out, "\t-- "..tostring(v))
+            end
+        end
+        return out
+    end
+
+    local chain = buildChain(selectedLog.path)
+    local argLines = buildArgsLines(selectedLog.args)
+    local scriptLines = {}
+
+    if chain then
+        if selectedLog.dir == "C>S" then
+            if argLines and #argLines > 0 then
+                table.insert(scriptLines, "local args = {")
+                for _, al in ipairs(argLines) do
+                    table.insert(scriptLines, al..",")
+                end
+                table.insert(scriptLines, "}")
+                table.insert(scriptLines, chain..":FireServer(unpack(args))")
+            else
+                table.insert(scriptLines, chain..":FireServer()")
+            end
+        else
+            table.insert(scriptLines, "-- S>C remote, server yang fire")
+            table.insert(scriptLines, chain..":OnClientEvent:Connect(function(...)")
+            table.insert(scriptLines, "\tprint(...)")
+            table.insert(scriptLines, "end)")
+        end
+    end
+
+    copyClip(table.concat(scriptLines, "\n"))
+    copyScriptBtn.Text = "✓ Copied!"
+    task.delay(2, function() copyScriptBtn.Text = "📋 Copy Script" end)
 end)
 
 rspySearch:GetPropertyChangedSignal("Text"):Connect(function()
