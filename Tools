@@ -1124,9 +1124,9 @@ local function parseArgsEditor()
             table.insert(result, tonumber(line))
         elseif line:sub(1,1) == '"' and line:sub(-1) == '"' then
             -- strip surrounding quotes, unescape
-            table.insert(result, line:sub(2,-2):gsub('\\"', '"'))
+            -- wrap gsub dalam () supaya ambil first return value je
+            table.insert(result, (line:sub(2,-2):gsub('\\"', '"')))
         else
-            -- raw string fallback
             table.insert(result, line)
         end
     end
@@ -1196,9 +1196,15 @@ replayBtn.MouseButton1Click:Connect(function()
             task.delay(1.5, function() replayBtn.Text = "▶ Replay Once" end)
             return
         end
-        local args = parseArgsEditor()
-        addConLog("Replaying: "..selectedLog.name.." | args: "..#args, C.goldText, "[rspy]")
-        addConLog("Path: "..selectedLog.path, C.dim, "[rspy]")
+        local parseOk, argsOrErr = pcall(parseArgsEditor)
+        if not parseOk then
+            addConLog("Parse error: "..tostring(argsOrErr), C.red, "[rspy]")
+            replayBtn.Text = "✗ Error"
+            task.delay(2, function() replayBtn.Text = "▶ Replay Once" end)
+            return
+        end
+        local args = argsOrErr
+        addConLog("Replaying: "..selectedLog.name.." ("..#args.." args)", C.goldText, "[rspy]")
         local ok, err = fireRemote(selectedLog, args)
         if ok then
             replayBtn.Text = "✓ Fired!"
