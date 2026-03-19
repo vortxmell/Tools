@@ -23,7 +23,6 @@ end
 -- ================================================
 local remoteLogs     = {}
 local remoteCount    = {}
-local blockedRemotes = {}
 local paused         = true   -- default stopped, kena tekan Play dulu
 local dirFilter      = "both" -- "both", "cs", "sc"
 local rspyAutoScroll = true
@@ -168,13 +167,11 @@ local function mkStroke(parent,color,thick)
 end
 
 -- ================================================
--- MAIN WINDOW — kecik muat screen mobile
--- Title(23) + Tab(26) = 49px total header
--- W +30%, H -7%
+-- MAIN WINDOW
 -- ================================================
-local WIN_W, WIN_H = 560, 380   -- W: 398*1.4=557, H: 332*1.2=398
+local WIN_W, WIN_H = 560, 380
 local MIN_W, MIN_H = 320, 260
-local TITLE_H = 23              -- 26 * 0.9 = ~23
+local TITLE_H = 23
 local TAB_H   = 26
 local HEADER_H = TITLE_H + TAB_H  -- 49
 
@@ -219,7 +216,7 @@ cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
 end)
 
 -- ================================================
--- TITLE BAR — nipis
+-- TITLE BAR
 -- ================================================
 local titleBar = mkFrame(mainWin,
     UDim2.new(1,0,0,TITLE_H),
@@ -242,7 +239,7 @@ local closeBtn = mkBtn(titleBar, "✕",
     C.red, C.white, 11)
 
 -- ================================================
--- TAB BAR — nipis, tab kecik
+-- TAB BAR
 -- ================================================
 local tabBar = mkFrame(mainWin,
     UDim2.new(1,0,0,TAB_H),
@@ -263,7 +260,6 @@ local function setTab(name)
     end
 end
 
--- Console tab kiri, rSpy kanan — lebar 50% dari asal
 local conTab = mkBtn(tabBar, "🖥 Console",
     UDim2.new(0,58,1,-4), UDim2.new(0,4,0,2),
     C.tabInactive, C.dim, 10)
@@ -272,7 +268,7 @@ local rspyTab = mkBtn(tabBar, "⚡ rSpy",
     UDim2.new(0,52,1,-4), UDim2.new(0,66,0,2),
     C.tabInactive, C.dim, 10)
 
--- Content frames — start selepas header
+-- Content frames
 local conContent = mkFrame(mainWin,
     UDim2.new(1,0,1,-HEADER_H),
     UDim2.new(0,0,0,HEADER_H),
@@ -368,7 +364,6 @@ closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
 -- ================================================
 local sharedCode = ""
 
--- Exec bar
 local execBar = mkFrame(conContent,
     UDim2.new(1,-16,0,34),
     UDim2.new(0,8,0,6),
@@ -390,14 +385,12 @@ local runBtn = mkBtn(execBar, "▶ Run",
     UDim2.new(1,-50,0,2),
     C.green, C.bg, 12)
 
--- Normal panel
 local normalPanel = mkFrame(conContent,
     UDim2.new(1,0,1,-44),
     UDim2.new(0,0,0,44),
     C.bg, 0)
 normalPanel.ClipsDescendants = false
 
--- Toolbar
 local conToolbar = mkFrame(normalPanel,
     UDim2.new(1,-16,0,26),
     UDim2.new(0,8,0,4),
@@ -416,13 +409,11 @@ local conCount = mkLabel(conToolbar, "0 lines",
     UDim2.new(0,80,1,0), UDim2.new(0,216,0,0),
     C.dim, 11)
 
--- Search
 local conSearch = mkInput(normalPanel,
     "🔍 Filter logs...",
     UDim2.new(1,-16,0,24),
     UDim2.new(0,8,0,34))
 
--- Log scroll
 local conScroll = mkScroll(normalPanel,
     UDim2.new(1,-16,1,-62),
     UDim2.new(0,8,0,62))
@@ -438,7 +429,6 @@ local fullPanel = mkFrame(conContent,
 fullPanel.ClipsDescendants = true
 fullPanel.Visible = false
 
--- Simple editor frame (no scroll — direct TextBox)
 local editorFrame = mkFrame(fullPanel,
     UDim2.new(1,-16,1,-34),
     UDim2.new(0,8,0,4),
@@ -467,7 +457,6 @@ edPad.PaddingLeft = UDim.new(0,4)
 edPad.PaddingTop = UDim.new(0,4)
 edPad.PaddingBottom = UDim.new(0,4)
 
--- Bottom bar dalam fullPanel
 local clearEditorBtn = mkBtn(fullPanel, "🗑 Clear",
     UDim2.new(0,70,0,26),
     UDim2.new(0,8,1,-30),
@@ -697,7 +686,7 @@ local rspyCount = mkLabel(rspyToolbar, "0 events",
     UDim2.new(0,80,1,0), UDim2.new(0,286,0,0),
     C.dim, 10)
 
--- STATUS + SEARCH (full width, atas panel)
+-- STATUS + SEARCH
 local rspyStatus = mkLabel(rspyContent, "⏹ Stopped",
     UDim2.new(1,-16,0,16),
     UDim2.new(0,8,0,36),
@@ -711,11 +700,11 @@ local rspySearch = mkInput(rspyContent,
 -- ================================================
 -- SPLIT PANEL — Left (50%) + Right (50%)
 -- ================================================
-local SPLIT_TOP  = 84   -- Y start (bawah search)
-local SPLIT_BOT  = 30   -- height bottom bar
-local GAP        = 4    -- gap between panels
+local SPLIT_TOP  = 84
+local SPLIT_BOT  = 30
+local GAP        = 4
 
--- LEFT PANEL — log list + bottom buttons
+-- LEFT PANEL
 local leftPanel = mkFrame(rspyContent,
     UDim2.new(0.5,-8-GAP,1,-SPLIT_TOP-SPLIT_BOT),
     UDim2.new(0,8,0,SPLIT_TOP),
@@ -756,20 +745,14 @@ detailLabel.TextWrapped = true
 detailLabel.ClipsDescendants = true
 detailLabel.TextYAlignment = Enum.TextYAlignment.Top
 
--- RIGHT bottom bar
+-- RIGHT bottom bar (block/unblock removed, only Export Selected)
 local rightBottomBar = mkFrame(rspyContent,
     UDim2.new(0.5,-8,0,SPLIT_BOT-4),
     UDim2.new(0.5,GAP,1,-SPLIT_BOT),
     C.panelDark, 5)
 
-local blockBtn = mkBtn(rightBottomBar, "🚫 Block",
-    UDim2.new(0,60,1,-4), UDim2.new(0,2,0,2),
-    C.red, C.white, 11)
-local unblockBtn = mkBtn(rightBottomBar, "✓ Unblock",
-    UDim2.new(0,66,1,-4), UDim2.new(0,66,0,2),
-    C.dimDark, C.goldText, 11)
-local exportSelBtn = mkBtn(rightBottomBar, "📤 Export",
-    UDim2.new(1,-140,1,-4), UDim2.new(0,136,0,2),
+local exportSelBtn = mkBtn(rightBottomBar, "📤 Export Selected",
+    UDim2.new(1,-8,1,-4), UDim2.new(0,4,0,2),
     C.goldBr, C.bg, 11)
 
 -- ================================================
@@ -840,7 +823,6 @@ end
 -- ================================================
 local function addRspyLog(dir, name, path, args)
     if paused then return end
-    if blockedRemotes[path] then return end
     -- Direction filter
     if dirFilter == "cs" and dir ~= "C>S" then return end
     if dirFilter == "sc" and dir ~= "S>C" then return end
@@ -921,14 +903,12 @@ end
 pauseBtn.MouseButton1Click:Connect(function()
     paused = not paused
     if paused then
-        -- Stopped
         pauseBtn.Text = "▶ Play"
         pauseBtn.BackgroundColor3 = C.green
         pauseBtn.TextColor3 = C.bg
         rspyStatus.Text = "⏹ Stopped"
         rspyStatus.TextColor3 = C.red
     else
-        -- Running
         pauseBtn.Text = "⏹ Stop"
         pauseBtn.BackgroundColor3 = C.orange
         pauseBtn.TextColor3 = C.bg
@@ -979,28 +959,13 @@ dirSCBtn.MouseButton1Click:Connect(function()
     updateDirBtns()
 end)
 
-updateDirBtns() -- set default visual
+updateDirBtns()
 
 copyHexBtn.MouseButton1Click:Connect(function()
     if not selectedLog then return end
     copyClip(getHexFull(selectedLog.args))
     copyHexBtn.Text = "✓ Done"
     task.delay(1.5, function() copyHexBtn.Text = "📋 Hex" end)
-end)
-
-replayBtn = nil -- removed, no longer in UI
-
-blockBtn.MouseButton1Click:Connect(function()
-    if not selectedLog then return end
-    blockedRemotes[selectedLog.path] = true
-    blockBtn.Text = "✓ Blocked"
-    task.delay(1.5, function() blockBtn.Text = "🚫 Block" end)
-end)
-
-unblockBtn.MouseButton1Click:Connect(function()
-    blockedRemotes = {}
-    unblockBtn.Text = "✓ Done!"
-    task.delay(1.5, function() unblockBtn.Text = "✓ Unblock" end)
 end)
 
 -- Export all logs
@@ -1016,7 +981,6 @@ exportBtn.MouseButton1Click:Connect(function()
     table.insert(lines, "Total: "..#remoteLogs.." events")
     table.insert(lines, "")
 
-    -- Sort by count untuk summary
     local summary = {}
     for path, count in pairs(remoteCount) do
         table.insert(summary, {path=path, count=count})
@@ -1046,7 +1010,7 @@ end)
 exportSelBtn.MouseButton1Click:Connect(function()
     if not selectedLog then
         exportSelBtn.Text = "Select first!"
-        task.delay(1.5, function() exportSelBtn.Text = "📤 Export" end)
+        task.delay(1.5, function() exportSelBtn.Text = "📤 Export Selected" end)
         return
     end
     local lines = {}
@@ -1074,7 +1038,7 @@ exportSelBtn.MouseButton1Click:Connect(function()
     end
     copyClip(table.concat(lines, "\n"))
     exportSelBtn.Text = "✓ Copied!"
-    task.delay(2, function() exportSelBtn.Text = "📤 Export" end)
+    task.delay(2, function() exportSelBtn.Text = "📤 Export Selected" end)
 end)
 
 rspySearch:GetPropertyChangedSignal("Text"):Connect(function()
@@ -1123,6 +1087,9 @@ end
 
 -- ================================================
 -- HOOK ALL REMOTES
+-- FIX: addRspyLog wrapped in pcall supaya kalau
+-- ada error dalam logging, game remote calls
+-- tak kena drop / interrupt.
 -- ================================================
 local function startHook()
     if not hookmetamethod then
@@ -1130,19 +1097,24 @@ local function startHook()
         return
     end
 
-    hookOrig = hookmetamethod(game,"__namecall",function(self,...)
+    hookOrig = hookmetamethod(game, "__namecall", function(self, ...)
         local method = getnamecallmethod()
-        if method=="FireServer" or method=="InvokeServer" then
-            local ok,path = pcall(function() return self:GetFullName() end)
-            if ok then addRspyLog("C>S",self.Name,path,{...}) end
+        if method == "FireServer" or method == "InvokeServer" then
+            local ok, path = pcall(function() return self:GetFullName() end)
+            if ok then
+                -- FIX: pcall pada addRspyLog — kalau logging error,
+                -- game remote call still proceed macam biasa
+                pcall(addRspyLog, "C>S", self.Name, path, {...})
+            end
         end
-        return hookOrig(self,...)
+        return hookOrig(self, ...)
     end)
 
     local function connectRE(v)
         if v:IsA("RemoteEvent") then
             v.OnClientEvent:Connect(function(...)
-                addRspyLog("S>C",v.Name,v:GetFullName(),{...})
+                -- FIX: sama, pcall protect logging S>C
+                pcall(addRspyLog, "S>C", v.Name, v:GetFullName(), {...})
             end)
         end
     end
@@ -1163,7 +1135,7 @@ startHook()
 -- ================================================
 setTab("console")
 
-addConLog("Hub Tools v2.7 loaded!", C.green, "[sys]")
+addConLog("Hub Tools v2.3 loaded!", C.green, "[sys]")
 addConLog("rSpy: Split panel — log kiri, detail kanan", C.dim, "[sys]")
 addConLog("Tap log → detail panel kanan update", C.dim, "[sys]")
 addConLog("UI naik bila keyboard buka", C.dim, "[sys]")
