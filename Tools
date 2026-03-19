@@ -1187,7 +1187,7 @@ local spamCount    = 0
 local spamPanelOpen = false
 
 -- Toggle spam panel visibility
-spamToggleBtn.MouseButton1Click:Connect(function()
+spamToggleBtn.Activated:Connect(function()
     spamPanelOpen = not spamPanelOpen
     spamPanel.Visible = spamPanelOpen
     spamToggleBtn.BackgroundColor3 = spamPanelOpen and C.orange or C.gold
@@ -1196,29 +1196,33 @@ spamToggleBtn.MouseButton1Click:Connect(function()
 end)
 
 -- Replay Once
-replayBtn.MouseButton1Click:Connect(function()
-    if not selectedLog then
-        replayBtn.Text = "Select log!"
-        task.delay(1.5, function() replayBtn.Text = "▶ Replay Once" end)
-        return
-    end
-    local args = parseArgsEditor()
-    addConLog("Replaying: "..selectedLog.name.." | args: "..#args, C.goldText, "[rspy]")
-    addConLog("Path: "..selectedLog.path, C.dim, "[rspy]")
-    local ok, err = fireRemote(selectedLog, args)
-    if ok then
-        replayBtn.Text = "✓ Fired!"
-        addConLog("Replay OK!", C.green, "[rspy]")
-        task.delay(1, function() replayBtn.Text = "▶ Replay Once" end)
-    else
-        replayBtn.Text = "✗ Error"
-        addConLog("Replay error: "..tostring(err), C.red, "[rspy]")
-        task.delay(2, function() replayBtn.Text = "▶ Replay Once" end)
-    end
+replayBtn.Activated:Connect(function()
+    -- Release TextBox focus dulu supaya tak block
+    argsEditor:ReleaseFocus()
+    task.defer(function()
+        if not selectedLog then
+            replayBtn.Text = "Select log!"
+            task.delay(1.5, function() replayBtn.Text = "▶ Replay Once" end)
+            return
+        end
+        local args = parseArgsEditor()
+        addConLog("Replaying: "..selectedLog.name.." | args: "..#args, C.goldText, "[rspy]")
+        addConLog("Path: "..selectedLog.path, C.dim, "[rspy]")
+        local ok, err = fireRemote(selectedLog, args)
+        if ok then
+            replayBtn.Text = "✓ Fired!"
+            addConLog("Replay OK!", C.green, "[rspy]")
+            task.delay(1, function() replayBtn.Text = "▶ Replay Once" end)
+        else
+            replayBtn.Text = "✗ Error"
+            addConLog("Replay error: "..tostring(err), C.red, "[rspy]")
+            task.delay(2, function() replayBtn.Text = "▶ Replay Once" end)
+        end
+    end)
 end)
 
 -- Spam Start
-spamStartBtn.MouseButton1Click:Connect(function()
+spamStartBtn.Activated:Connect(function()
     if not selectedLog then
         spamStartBtn.Text = "Select log!"
         task.delay(1.5, function() spamStartBtn.Text = "▶ Start" end)
@@ -1259,7 +1263,7 @@ spamStartBtn.MouseButton1Click:Connect(function()
 end)
 
 -- Spam Stop
-spamStopBtn.MouseButton1Click:Connect(function()
+spamStopBtn.Activated:Connect(function()
     spamActive = false
     addConLog("Spam stopped. Total fired: "..spamCount, C.green, "[rspy]")
 end)
