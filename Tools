@@ -663,37 +663,41 @@ end)
 
 -- ================================================
 -- ===== rSPY TAB =====
+-- Layout: Toolbar | [Left: Log List] [Right: Detail]
 -- ================================================
+
+-- TOOLBAR
 local rspyToolbar = mkFrame(rspyContent,
     UDim2.new(1,-16,0,26),
     UDim2.new(0,8,0,6),
     C.panelDark, 5)
 
 local pauseBtn = mkBtn(rspyToolbar, "▶ Play",
-    UDim2.new(0,62,1,-4), UDim2.new(0,2,0,2),
+    UDim2.new(0,58,1,-4), UDim2.new(0,2,0,2),
     C.green, C.bg, 11)
 local clearRspyBtn = mkBtn(rspyToolbar, "🗑 Clear",
-    UDim2.new(0,54,1,-4), UDim2.new(0,68,0,2),
+    UDim2.new(0,50,1,-4), UDim2.new(0,64,0,2),
     C.red, C.white, 11)
 local asRspyBtn = mkBtn(rspyToolbar, "↓ Auto",
-    UDim2.new(0,50,1,-4), UDim2.new(0,126,0,2),
+    UDim2.new(0,46,1,-4), UDim2.new(0,118,0,2),
     C.goldBr, C.bg, 11)
 
--- Direction filter buttons
+-- Direction filter
 local dirBothBtn = mkBtn(rspyToolbar, "Both",
-    UDim2.new(0,40,1,-4), UDim2.new(0,180,0,2),
+    UDim2.new(0,38,1,-4), UDim2.new(0,168,0,2),
     C.goldBr, C.bg, 10)
 local dirCSBtn = mkBtn(rspyToolbar, "C>S",
-    UDim2.new(0,36,1,-4), UDim2.new(0,224,0,2),
+    UDim2.new(0,34,1,-4), UDim2.new(0,210,0,2),
     C.tabInactive, C.orange, 10)
 local dirSCBtn = mkBtn(rspyToolbar, "S>C",
-    UDim2.new(0,36,1,-4), UDim2.new(0,264,0,2),
+    UDim2.new(0,34,1,-4), UDim2.new(0,248,0,2),
     C.tabInactive, C.blue, 10)
 
 local rspyCount = mkLabel(rspyToolbar, "0 events",
-    UDim2.new(0,80,1,0), UDim2.new(0,304,0,0),
+    UDim2.new(0,80,1,0), UDim2.new(0,286,0,0),
     C.dim, 10)
 
+-- STATUS + SEARCH (full width, atas panel)
 local rspyStatus = mkLabel(rspyContent, "⏹ Stopped",
     UDim2.new(1,-16,0,16),
     UDim2.new(0,8,0,36),
@@ -704,47 +708,69 @@ local rspySearch = mkInput(rspyContent,
     UDim2.new(1,-16,0,24),
     UDim2.new(0,8,0,56))
 
-local rspyScroll = mkScroll(rspyContent,
-    UDim2.new(1,-16,1,-212),
-    UDim2.new(0,8,0,84))
-mkStroke(rspyScroll, C.gold)
+-- ================================================
+-- SPLIT PANEL — Left (50%) + Right (50%)
+-- ================================================
+local SPLIT_TOP  = 84   -- Y start (bawah search)
+local SPLIT_BOT  = 30   -- height bottom bar
+local GAP        = 4    -- gap between panels
 
-local detailPanel = mkFrame(rspyContent,
-    UDim2.new(1,-16,0,96),
-    UDim2.new(0,8,1,-100),
+-- LEFT PANEL — log list + bottom buttons
+local leftPanel = mkFrame(rspyContent,
+    UDim2.new(0.5,-8-GAP,1,-SPLIT_TOP-SPLIT_BOT),
+    UDim2.new(0,8,0,SPLIT_TOP),
     C.panelDark, 5)
-mkStroke(detailPanel, C.goldBr)
+mkStroke(leftPanel, C.gold)
 
-local detailLabel = mkLabel(detailPanel,
-    "[ Tap log untuk tengok details ]",
-    UDim2.new(1,-8,1,-56),
-    UDim2.new(0,4,0,2),
+local rspyScroll = mkScroll(leftPanel,
+    UDim2.new(1,0,1,0),
+    UDim2.new(0,0,0,0))
+
+-- LEFT bottom bar
+local leftBottomBar = mkFrame(rspyContent,
+    UDim2.new(0.5,-8-GAP,0,SPLIT_BOT-4),
+    UDim2.new(0,8,1,-SPLIT_BOT),
+    C.panelDark, 5)
+
+local copyHexBtn = mkBtn(leftBottomBar, "📋 Hex",
+    UDim2.new(0,58,1,-4), UDim2.new(0,2,0,2),
+    C.gold, C.bg, 11)
+local exportBtn = mkBtn(leftBottomBar, "📤 Export All",
+    UDim2.new(1,-114,1,-4), UDim2.new(0,64,0,2),
+    C.goldBr, C.bg, 11)
+
+-- RIGHT PANEL — detail view
+local rightPanel = mkFrame(rspyContent,
+    UDim2.new(0.5,-8,1,-SPLIT_TOP-SPLIT_BOT),
+    UDim2.new(0.5,GAP,0,SPLIT_TOP),
+    C.panelDark, 5)
+mkStroke(rightPanel, C.goldBr)
+
+local detailLabel = mkLabel(rightPanel,
+    "[ Tap log\nuntuk detail ]",
+    UDim2.new(1,-8,1,-8),
+    UDim2.new(0,4,0,4),
     C.dim, 10, Enum.Font.Code)
 detailLabel.TextTruncate = Enum.TextTruncate.None
 detailLabel.TextWrapped = true
 detailLabel.ClipsDescendants = true
+detailLabel.TextYAlignment = Enum.TextYAlignment.Top
 
--- Row 1 buttons
-local copyHexBtn = mkBtn(detailPanel, "📋 Hex",
-    UDim2.new(0,65,0,22), UDim2.new(0,4,1,-50),
-    C.gold, C.bg, 11)
-local replayBtn = mkBtn(detailPanel, "▷ Replay",
-    UDim2.new(0,72,0,22), UDim2.new(0,73,1,-50),
-    C.green, C.bg, 11)
-local blockBtn = mkBtn(detailPanel, "🚫 Block",
-    UDim2.new(0,68,0,22), UDim2.new(0,149,1,-50),
+-- RIGHT bottom bar
+local rightBottomBar = mkFrame(rspyContent,
+    UDim2.new(0.5,-8,0,SPLIT_BOT-4),
+    UDim2.new(0.5,GAP,1,-SPLIT_BOT),
+    C.panelDark, 5)
+
+local blockBtn = mkBtn(rightBottomBar, "🚫 Block",
+    UDim2.new(0,60,1,-4), UDim2.new(0,2,0,2),
     C.red, C.white, 11)
-local unblockBtn = mkBtn(detailPanel, "✓ Unblock",
-    UDim2.new(0,76,0,22), UDim2.new(0,221,1,-50),
+local unblockBtn = mkBtn(rightBottomBar, "✓ Unblock",
+    UDim2.new(0,66,1,-4), UDim2.new(0,66,0,2),
     C.dimDark, C.goldText, 11)
-
--- Row 2 buttons
-local exportBtn = mkBtn(detailPanel, "📤 Export All",
-    UDim2.new(0,90,0,22), UDim2.new(0,4,1,-26),
+local exportSelBtn = mkBtn(rightBottomBar, "📤 Export",
+    UDim2.new(1,-140,1,-4), UDim2.new(0,136,0,2),
     C.goldBr, C.bg, 11)
-local exportSelBtn = mkBtn(detailPanel, "📤 Export Selected",
-    UDim2.new(0,120,0,22), UDim2.new(0,98,1,-26),
-    C.dimDark, C.goldText, 11)
 
 -- ================================================
 -- rSPY HELPERS
@@ -874,8 +900,9 @@ local function addRspyLog(dir, name, path, args)
     rb.Parent = row
     rb.MouseButton1Click:Connect(function()
         selectedLog = entry
-        detailLabel.Text = string.format("[%s] %s | %s\n%s",
-            dir,name,ts,argsStr)
+        detailLabel.Text = string.format(
+            "[%s] %s\n%s\n\nPath:\n%s\n\nArgs:\n%s",
+            dir, name, ts, path, argsStr)
         for _,c in pairs(rspyScroll:GetChildren()) do
             if c:IsA("Frame") then c.BackgroundColor3=C.panel end
         end
@@ -917,7 +944,7 @@ clearRspyBtn.MouseButton1Click:Connect(function()
         if c:IsA("Frame") then c:Destroy() end
     end
     rspyCount.Text = "0 events"
-    detailLabel.Text = "[ Tap log untuk tengok details ]"
+    detailLabel.Text = "[ Tap log\nuntuk detail ]"
     selectedLog = nil
 end)
 
@@ -961,15 +988,7 @@ copyHexBtn.MouseButton1Click:Connect(function()
     task.delay(1.5, function() copyHexBtn.Text = "📋 Hex" end)
 end)
 
-replayBtn.MouseButton1Click:Connect(function()
-    if not selectedLog then return end
-    local r = RS:FindFirstChild(selectedLog.name,true)
-    if r and r:IsA("RemoteEvent") then
-        pcall(function() r:FireServer(table.unpack(selectedLog.args)) end)
-        replayBtn.Text = "✓ Sent!"
-        task.delay(1, function() replayBtn.Text = "▷ Replay" end)
-    end
-end)
+replayBtn = nil -- removed, no longer in UI
 
 blockBtn.MouseButton1Click:Connect(function()
     if not selectedLog then return end
@@ -1027,7 +1046,7 @@ end)
 exportSelBtn.MouseButton1Click:Connect(function()
     if not selectedLog then
         exportSelBtn.Text = "Select first!"
-        task.delay(1.5, function() exportSelBtn.Text = "📤 Export Selected" end)
+        task.delay(1.5, function() exportSelBtn.Text = "📤 Export" end)
         return
     end
     local lines = {}
@@ -1049,16 +1068,13 @@ exportSelBtn.MouseButton1Click:Connect(function()
         table.insert(lines, "    remote.OnClientEvent:Connect(function(...) print(...) end)")
     end
     table.insert(lines, "end")
-
-    -- Also include hex if buffer
     if selectedLog.isBuf then
         table.insert(lines, "")
         table.insert(lines, getHexFull(selectedLog.args))
     end
-
     copyClip(table.concat(lines, "\n"))
     exportSelBtn.Text = "✓ Copied!"
-    task.delay(2, function() exportSelBtn.Text = "📤 Export Selected" end)
+    task.delay(2, function() exportSelBtn.Text = "📤 Export" end)
 end)
 
 rspySearch:GetPropertyChangedSignal("Text"):Connect(function()
@@ -1147,7 +1163,7 @@ startHook()
 -- ================================================
 setTab("console")
 
-addConLog("Hub Tools v2.6 loaded!", C.green, "[sys]")
-addConLog("rSpy: Export All + Export Selected tersedia", C.dim, "[sys]")
-addConLog("Export Selected = auto-generate exploit script!", C.dim, "[sys]")
+addConLog("Hub Tools v2.7 loaded!", C.green, "[sys]")
+addConLog("rSpy: Split panel — log kiri, detail kanan", C.dim, "[sys]")
+addConLog("Tap log → detail panel kanan update", C.dim, "[sys]")
 addConLog("UI naik bila keyboard buka", C.dim, "[sys]")
