@@ -705,36 +705,45 @@ local rspySearch = mkInput(rspyContent,
     UDim2.new(0,8,0,56))
 
 local rspyScroll = mkScroll(rspyContent,
-    UDim2.new(1,-16,1,-188),
+    UDim2.new(1,-16,1,-212),
     UDim2.new(0,8,0,84))
 mkStroke(rspyScroll, C.gold)
 
 local detailPanel = mkFrame(rspyContent,
-    UDim2.new(1,-16,0,72),
-    UDim2.new(0,8,1,-96),
+    UDim2.new(1,-16,0,96),
+    UDim2.new(0,8,1,-100),
     C.panelDark, 5)
 mkStroke(detailPanel, C.goldBr)
 
 local detailLabel = mkLabel(detailPanel,
     "[ Tap log untuk tengok details ]",
-    UDim2.new(1,-8,1,-30),
+    UDim2.new(1,-8,1,-56),
     UDim2.new(0,4,0,2),
     C.dim, 10, Enum.Font.Code)
 detailLabel.TextTruncate = Enum.TextTruncate.None
 detailLabel.TextWrapped = true
 detailLabel.ClipsDescendants = true
 
+-- Row 1 buttons
 local copyHexBtn = mkBtn(detailPanel, "📋 Hex",
-    UDim2.new(0,65,0,22), UDim2.new(0,4,1,-26),
+    UDim2.new(0,65,0,22), UDim2.new(0,4,1,-50),
     C.gold, C.bg, 11)
 local replayBtn = mkBtn(detailPanel, "▷ Replay",
-    UDim2.new(0,72,0,22), UDim2.new(0,73,1,-26),
+    UDim2.new(0,72,0,22), UDim2.new(0,73,1,-50),
     C.green, C.bg, 11)
 local blockBtn = mkBtn(detailPanel, "🚫 Block",
-    UDim2.new(0,68,0,22), UDim2.new(0,149,1,-26),
+    UDim2.new(0,68,0,22), UDim2.new(0,149,1,-50),
     C.red, C.white, 11)
 local unblockBtn = mkBtn(detailPanel, "✓ Unblock",
-    UDim2.new(0,76,0,22), UDim2.new(0,221,1,-26),
+    UDim2.new(0,76,0,22), UDim2.new(0,221,1,-50),
+    C.dimDark, C.goldText, 11)
+
+-- Row 2 buttons
+local exportBtn = mkBtn(detailPanel, "📤 Export All",
+    UDim2.new(0,90,0,22), UDim2.new(0,4,1,-26),
+    C.goldBr, C.bg, 11)
+local exportSelBtn = mkBtn(detailPanel, "📤 Export Selected",
+    UDim2.new(0,120,0,22), UDim2.new(0,98,1,-26),
     C.dimDark, C.goldText, 11)
 
 -- ================================================
@@ -975,6 +984,83 @@ unblockBtn.MouseButton1Click:Connect(function()
     task.delay(1.5, function() unblockBtn.Text = "✓ Unblock" end)
 end)
 
+-- Export all logs
+exportBtn.MouseButton1Click:Connect(function()
+    if #remoteLogs == 0 then
+        exportBtn.Text = "Nothing!"
+        task.delay(1.5, function() exportBtn.Text = "📤 Export All" end)
+        return
+    end
+
+    local lines = {}
+    table.insert(lines, "=== rSpy Export ===")
+    table.insert(lines, "Total: "..#remoteLogs.." events")
+    table.insert(lines, "")
+
+    -- Sort by count untuk summary
+    local summary = {}
+    for path, count in pairs(remoteCount) do
+        table.insert(summary, {path=path, count=count})
+    end
+    table.sort(summary, function(a,b) return a.count > b.count end)
+
+    table.insert(lines, "=== TOP REMOTES ===")
+    for i, s in ipairs(summary) do
+        if i > 10 then break end
+        local name = s.path:match("([^%.]+)$") or s.path
+        table.insert(lines, string.format("#%d %s — x%d", i, name, s.count))
+    end
+    table.insert(lines, "")
+
+    table.insert(lines, "=== ALL LOGS ===")
+    for _, entry in ipairs(remoteLogs) do
+        table.insert(lines, string.format("[%s][%s] %s | %s",
+            entry.time, entry.dir, entry.name, entry.argsStr))
+    end
+
+    copyClip(table.concat(lines, "\n"))
+    exportBtn.Text = "✓ Copied!"
+    task.delay(2, function() exportBtn.Text = "📤 Export All" end)
+end)
+
+-- Export selected log only
+exportSelBtn.MouseButton1Click:Connect(function()
+    if not selectedLog then
+        exportSelBtn.Text = "Select first!"
+        task.delay(1.5, function() exportSelBtn.Text = "📤 Export Selected" end)
+        return
+    end
+    local lines = {}
+    table.insert(lines, "=== Selected Remote ===")
+    table.insert(lines, "Name: "..selectedLog.name)
+    table.insert(lines, "Path: "..selectedLog.path)
+    table.insert(lines, "Dir:  "..selectedLog.dir)
+    table.insert(lines, "Time: "..selectedLog.time)
+    table.insert(lines, "Args: "..selectedLog.argsStr)
+    table.insert(lines, "")
+    table.insert(lines, "-- Auto-generated exploit script:")
+    table.insert(lines, "local RS = game:GetService('ReplicatedStorage')")
+    table.insert(lines, string.format("local remote = RS:FindFirstChild('%s', true)", selectedLog.name))
+    table.insert(lines, "if remote then")
+    if selectedLog.dir == "C>S" then
+        table.insert(lines, "    remote:FireServer() -- add args if needed")
+    else
+        table.insert(lines, "    -- S>C remote, server controls this")
+        table.insert(lines, "    remote.OnClientEvent:Connect(function(...) print(...) end)")
+    end
+    table.insert(lines, "end")
+
+    -- Also include hex if buffer
+    if selectedLog.isBuf then
+        table.insert(lines, "")
+        table.insert(lines, getHexFull(selectedLog.args))
+    end
+
+    copyClip(table.concat(lines, "\n"))
+    exportSelBtn.Text = "✓ Copied!"
+    task.delay(2, function() exportSelBtn.Text = "📤 Export Selected" end)
+end)
+
 rspySearch:GetPropertyChangedSignal("Text"):Connect(function()
     local f = rspySearch.Text:lower()
     for _,row in pairs(rspyScroll:GetChildren()) do
@@ -1061,7 +1147,7 @@ startHook()
 -- ================================================
 setTab("console")
 
-addConLog("Hub Tools v2.5 loaded!", C.green, "[sys]")
-addConLog("rSpy: Both/C>S/S>C filter tersedia", C.dim, "[sys]")
-addConLog("⛶ Full = fullsize editor", C.dim, "[sys]")
+addConLog("Hub Tools v2.6 loaded!", C.green, "[sys]")
+addConLog("rSpy: Export All + Export Selected tersedia", C.dim, "[sys]")
+addConLog("Export Selected = auto-generate exploit script!", C.dim, "[sys]")
 addConLog("UI naik bila keyboard buka", C.dim, "[sys]")
