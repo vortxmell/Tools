@@ -412,7 +412,7 @@ local asConBtn = mkBtn(conToolbar, "↓ Auto",
     C.goldBr, C.bg, 11)
 local conCount = mkLabel(conToolbar, "0 lines",
     UDim2.new(0,80,1,0), UDim2.new(0,216,0,0),
-    C.dim, 11)
+    C.white, 11)
 
 local conSearch = mkInput(normalPanel,
     "🔍 Filter logs...",
@@ -689,7 +689,7 @@ local dirSCBtn = mkBtn(rspyToolbar, "S>C",
 
 local rspyCount = mkLabel(rspyToolbar, "0 events",
     UDim2.new(0,80,1,0), UDim2.new(0,286,0,0),
-    C.dim, 10)
+    C.white, 10)
 
 -- STATUS + SEARCH
 local rspyStatus = mkLabel(rspyContent, "⏹ Stopped",
@@ -744,7 +744,7 @@ local detailLabel = mkLabel(rightPanel,
     "[ Tap log\nuntuk detail ]",
     UDim2.new(1,-8,1,-8),
     UDim2.new(0,4,0,4),
-    C.dim, 10, Enum.Font.Code)
+    C.white, 10, Enum.Font.Code)
 detailLabel.TextTruncate = Enum.TextTruncate.None
 detailLabel.TextWrapped = true
 detailLabel.ClipsDescendants = true
@@ -925,7 +925,7 @@ local function addRspyLog(dir, name, path, args)
     -- LINE 2: args preview (penuh width)
     mkLabel(row,argsStr,
         UDim2.new(1,-8,0,13),UDim2.new(0,4,0,18),
-        C.dim,9,Enum.Font.Code)
+        C.white,9,Enum.Font.Code)
 
     local rb = Instance.new("TextButton")
     rb.Size = UDim2.new(1,0,1,0)
