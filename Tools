@@ -31,9 +31,16 @@ local editorFullsize = false
 local sharedCode     = ""
 
 -- rSpy
-local rspyVisible    = false  -- false = stopped, true = showing logs
+local rspyVisible    = false
 local dirFilter      = "both"
 local rspyAutoScroll = true
+
+-- rSpy Filters
+local filterIgnore   = {}   -- set of remote names to ignore
+local filterRateMax  = 0    -- max fires per second per remote (0 = off)
+local filterUnique   = false -- only log first fire per remote
+local filterRateTrack = {}  -- path -> {count, windowStart}
+local filterSeen      = {}  -- path -> bool (untuk unique mode)
 
 -- Console
 local conAutoScroll = true
@@ -520,7 +527,8 @@ local asRspyBtn    = mkBtn(rspyToolbar,"↓ Auto", UDim2.new(0,46,1,-4),UDim2.ne
 local dirBothBtn   = mkBtn(rspyToolbar,"Both",   UDim2.new(0,38,1,-4),UDim2.new(0,168,0,2),C.goldBr,C.bg,10)
 local dirCSBtn     = mkBtn(rspyToolbar,"C>S",    UDim2.new(0,34,1,-4),UDim2.new(0,210,0,2),C.tabInactive,C.orange,10)
 local dirSCBtn     = mkBtn(rspyToolbar,"S>C",    UDim2.new(0,34,1,-4),UDim2.new(0,248,0,2),C.tabInactive,C.blue,10)
-local rspyCount    = mkLabel(rspyToolbar,"0 events",UDim2.new(0,80,1,0),UDim2.new(0,286,0,0),C.white,10)
+local filterTogBtn = mkBtn(rspyToolbar,"⚙",      UDim2.new(0,22,1,-4),UDim2.new(1,-24,0,2),C.dimDark,C.goldText,12)
+local rspyCount    = mkLabel(rspyToolbar,"0 events",UDim2.new(0,60,1,0),UDim2.new(0,286,0,0),C.white,10)
 
 local rspyStatus = mkLabel(rspyContent,"⏹ Stopped",
     UDim2.new(1,-16,0,16),UDim2.new(0,8,0,36),C.red,11)
@@ -553,6 +561,79 @@ local rightPanel = mkFrame(rspyContent,
     UDim2.new(0.5,GAP,0,SPLIT_TOP), C.panelDark, 5)
 mkStroke(rightPanel, C.goldBr)
 rightPanel.ClipsDescendants = false
+
+-- ================================================
+-- FILTER PANEL — slide in dari kanan
+-- Overlay atas rightPanel + rightBottomBar area
+-- ================================================
+local filterPanel = mkFrame(rspyContent,
+    UDim2.new(0.5,-8,1,-SPLIT_TOP-SPLIT_BOT+26),
+    UDim2.new(0.5,GAP,0,SPLIT_TOP-26),
+    Color3.fromRGB(12,10,2), 6)
+mkStroke(filterPanel, C.goldBr, 1.5)
+filterPanel.ZIndex   = 20
+filterPanel.Visible  = false
+filterPanel.ClipsDescendants = true
+
+-- Filter panel title
+local fpTitle = mkLabel(filterPanel, "⚙  Filters",
+    UDim2.new(1,-8,0,18), UDim2.new(0,4,0,4),
+    C.goldText, 11, Enum.Font.GothamBold)
+fpTitle.ZIndex = 21
+
+-- Divider
+local fpDiv = mkFrame(filterPanel,
+    UDim2.new(1,-8,0,1), UDim2.new(0,4,0,24),
+    C.gold, 0)
+fpDiv.ZIndex = 21
+
+-- ── Section 1: Ignore List ──
+mkLabel(filterPanel, "🚫  Ignore (pisah koma):",
+    UDim2.new(1,-8,0,14), UDim2.new(0,4,0,30),
+    C.white, 10, Enum.Font.GothamBold).ZIndex = 21
+
+local ignoreInput = mkInput(filterPanel,
+    "Unreliable_Event, Ping",
+    UDim2.new(1,-8,0,26), UDim2.new(0,4,0,46))
+ignoreInput.ZIndex = 21
+
+-- ── Section 2: Rate Limit ──
+mkLabel(filterPanel, "⚡  Rate limit (max/s, 0=off):",
+    UDim2.new(1,-8,0,14), UDim2.new(0,4,0,78),
+    C.white, 10, Enum.Font.GothamBold).ZIndex = 21
+
+local rateInput = mkInput(filterPanel, "0",
+    UDim2.new(0,60,0,26), UDim2.new(0,4,0,94))
+rateInput.ZIndex = 21
+
+mkLabel(filterPanel, "/s per remote",
+    UDim2.new(1,-68,0,26), UDim2.new(0,68,0,94),
+    C.dim, 10).ZIndex = 21
+
+-- ── Section 3: Unique Mode ──
+mkLabel(filterPanel, "🔵  Unique mode:",
+    UDim2.new(1,-8,0,14), UDim2.new(0,4,0,126),
+    C.white, 10, Enum.Font.GothamBold).ZIndex = 21
+
+local uniqueBtn = mkBtn(filterPanel, "OFF",
+    UDim2.new(0,52,0,22), UDim2.new(0,4,0,142),
+    C.dimDark, C.goldText, 11)
+uniqueBtn.ZIndex = 21
+
+mkLabel(filterPanel, "Log remote baru je (skip repeat)",
+    UDim2.new(1,-62,0,22), UDim2.new(0,60,0,142),
+    C.dim, 9).ZIndex = 21
+
+-- ── Apply / Clear buttons ──
+local fpApplyBtn = mkBtn(filterPanel, "✓ Apply",
+    UDim2.new(0.5,-3,0,24), UDim2.new(0,4,1,-28),
+    C.green, C.bg, 11)
+fpApplyBtn.ZIndex = 21
+
+local fpClearBtn = mkBtn(filterPanel, "✕ Reset",
+    UDim2.new(0.5,-3,0,24), UDim2.new(0.5,1,1,-28),
+    C.dimDark, C.goldText, 11)
+fpClearBtn.ZIndex = 21
 
 -- Info section
 local infoPanel = mkFrame(rightPanel,
@@ -993,12 +1074,38 @@ end
 -- Hook sentiasa capture. rspyVisible = display control je.
 -- ================================================
 local function addRspyLog(dir, name, path, args, returnVal, remoteClass)
-    -- rspyVisible = false means user stopped display, skip
     if not rspyVisible then return end
     if dirFilter=="cs" and dir~="C>S" then return end
     if dirFilter=="sc" and dir~="S>C" then return end
     local f = rspySearch.Text:lower()
     if f~="" and not name:lower():find(f,1,true) then return end
+
+    -- ── Filter: Ignore list ──
+    if filterIgnore[name:lower()] then return end
+
+    -- ── Filter: Rate limit ──
+    if filterRateMax > 0 then
+        local now = os.clock()
+        local track = filterRateTrack[path]
+        if not track then
+            filterRateTrack[path] = {count=1, windowStart=now}
+        else
+            if now - track.windowStart >= 1 then
+                -- Reset window
+                track.count = 1
+                track.windowStart = now
+            else
+                track.count += 1
+                if track.count > filterRateMax then return end
+            end
+        end
+    end
+
+    -- ── Filter: Unique mode ──
+    if filterUnique then
+        if filterSeen[path] then return end
+        filterSeen[path] = true
+    end
 
     remoteCount[path] = (remoteCount[path] or 0)+1
     local now        = os.clock()
@@ -1114,7 +1221,7 @@ pauseBtn.MouseButton1Click:Connect(function()
 end)
 
 clearRspyBtn.MouseButton1Click:Connect(function()
-    remoteLogs={};remoteCount={};remoteLastFire={}
+    remoteLogs={};remoteCount={};remoteLastFire={};filterRateTrack={};filterSeen={}
     for _,c in pairs(rspyScroll:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
     rspyCount.Text="0 events"; detailLabel.Text="[ Tap log untuk detail ]"
     argsEditor.Text=""; selectedLog=nil
@@ -1136,6 +1243,72 @@ dirBothBtn.MouseButton1Click:Connect(function() dirFilter="both"; updateDirBtns(
 dirCSBtn.MouseButton1Click:Connect(function()   dirFilter="cs";   updateDirBtns() end)
 dirSCBtn.MouseButton1Click:Connect(function()   dirFilter="sc";   updateDirBtns() end)
 updateDirBtns()
+
+-- ================================================
+-- FILTER PANEL HANDLERS
+-- ================================================
+local filterPanelOpen = false
+
+filterTogBtn.MouseButton1Click:Connect(function()
+    filterPanelOpen = not filterPanelOpen
+    filterPanel.Visible = filterPanelOpen
+    filterTogBtn.BackgroundColor3 = filterPanelOpen and C.goldBr or C.dimDark
+    filterTogBtn.TextColor3       = filterPanelOpen and C.bg or C.goldText
+end)
+
+local uniqueOn = false
+uniqueBtn.MouseButton1Click:Connect(function()
+    uniqueOn = not uniqueOn
+    uniqueBtn.Text             = uniqueOn and "ON" or "OFF"
+    uniqueBtn.BackgroundColor3 = uniqueOn and C.blue or C.dimDark
+    uniqueBtn.TextColor3       = uniqueOn and C.white or C.goldText
+end)
+
+fpApplyBtn.MouseButton1Click:Connect(function()
+    -- Parse ignore list
+    filterIgnore = {}
+    for name in ignoreInput.Text:gmatch("[^,]+") do
+        local trimmed = (name:match("^%s*(.-)%s*$") or ""):lower()
+        if trimmed ~= "" then filterIgnore[trimmed] = true end
+    end
+
+    -- Rate limit
+    filterRateMax   = math.max(0, tonumber(rateInput.Text) or 0)
+    filterRateTrack = {}
+
+    -- Unique mode
+    filterUnique = uniqueOn
+    filterSeen   = {}
+
+    -- Update ⚙ button to show active filter count
+    local n = 0
+    if next(filterIgnore) then n+=1 end
+    if filterRateMax > 0  then n+=1 end
+    if filterUnique       then n+=1 end
+    filterTogBtn.BackgroundColor3 = n>0 and C.orange or C.dimDark
+    filterTogBtn.TextColor3       = n>0 and C.bg or C.goldText
+    filterTogBtn.Text             = n>0 and ("⚙"..n) or "⚙"
+
+    fpApplyBtn.Text = "✓ Applied!"
+    task.delay(1.5, function() fpApplyBtn.Text = "✓ Apply" end)
+    filterPanelOpen = false
+    filterPanel.Visible = false
+
+    addConLog("Filters: ignore="..(next(filterIgnore) and "on" or "off")
+        .." rate="..filterRateMax
+        .." unique="..tostring(filterUnique), C.goldText,"[filter]")
+end)
+
+fpClearBtn.MouseButton1Click:Connect(function()
+    filterIgnore={};filterRateMax=0;filterRateTrack={}
+    filterUnique=false;filterSeen={}
+    uniqueOn=false
+    ignoreInput.Text=""; rateInput.Text="0"
+    uniqueBtn.Text="OFF"; uniqueBtn.BackgroundColor3=C.dimDark; uniqueBtn.TextColor3=C.goldText
+    filterTogBtn.BackgroundColor3=C.dimDark; filterTogBtn.TextColor3=C.goldText; filterTogBtn.Text="⚙"
+    fpClearBtn.Text="✓ Reset!"; task.delay(1.5,function() fpClearBtn.Text="✕ Reset" end)
+    addConLog("Filters cleared.",C.dim,"[filter]")
+end)
 
 -- Search
 rspySearch:GetPropertyChangedSignal("Text"):Connect(function()
