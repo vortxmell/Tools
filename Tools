@@ -790,23 +790,18 @@ argsEditor.TextWrapped = false
 argsEditor.ZIndex = 2
 argsEditor.Parent = argsEditorFrame
 
--- Section 3: Action buttons — Replay + Spam toggle (62%-72%)
-local actionBar = mkFrame(rightPanel,
-    UDim2.new(1,-8,0,30),
-    UDim2.new(0,4,0.62,0),
-    C.bg, 4)
-actionBar.ClipsDescendants = false
-actionBar.ZIndex = 5
-
-local replayBtn = mkBtn(actionBar, "▶ Replay Once",
-    UDim2.new(0.5,-3,1,-4), UDim2.new(0,2,0,2),
+-- Section 3: Action buttons — direct children of rightPanel, ZIndex tinggi
+local replayBtn = mkBtn(rightPanel, "▶ Replay Once",
+    UDim2.new(0.5,-3,0,28),
+    UDim2.new(0,4,0.62,2),
     C.green, C.bg, 11)
-replayBtn.ZIndex = 6
+replayBtn.ZIndex = 10
 
-local spamToggleBtn = mkBtn(actionBar, "⏱ Spam",
-    UDim2.new(0.5,-3,1,-4), UDim2.new(0.5,1,0,2),
+local spamToggleBtn = mkBtn(rightPanel, "⏱ Spam",
+    UDim2.new(0.5,-3,0,28),
+    UDim2.new(0.5,1,0.62,2),
     C.gold, C.bg, 11)
-spamToggleBtn.ZIndex = 6
+spamToggleBtn.ZIndex = 10
 
 -- Section 4: Spam panel (74%-100%, hidden by default)
 local spamPanel = mkFrame(rightPanel,
@@ -815,30 +810,35 @@ local spamPanel = mkFrame(rightPanel,
     C.bg, 4)
 mkStroke(spamPanel, C.orange, 1)
 spamPanel.ClipsDescendants = false
+spamPanel.ZIndex = 10
 spamPanel.Visible = false
 
 -- Interval row
 mkLabel(spamPanel, "Interval (ms):",
     UDim2.new(0,80,0,20), UDim2.new(0,4,0,4),
-    C.goldText, 10)
+    C.goldText, 10).ZIndex = 11
 
 local intervalInput = mkInput(spamPanel, "350",
     UDim2.new(0,60,0,20), UDim2.new(0,88,0,4))
 intervalInput.TextSize = 11
+intervalInput.ZIndex = 11
 
 local spamStartBtn = mkBtn(spamPanel, "▶ Start",
     UDim2.new(0,52,0,20), UDim2.new(1,-110,0,4),
     C.green, C.bg, 11)
+spamStartBtn.ZIndex = 11
 
 local spamStopBtn = mkBtn(spamPanel, "⏹ Stop",
     UDim2.new(0,52,0,20), UDim2.new(1,-56,0,4),
     C.red, C.white, 11)
+spamStopBtn.ZIndex = 11
 spamStopBtn.Visible = false
 
 -- Count label
 local spamCountLabel = mkLabel(spamPanel, "Fired: 0",
     UDim2.new(1,-8,0,16), UDim2.new(0,4,0.55,0),
     C.white, 10)
+spamCountLabel.ZIndex = 11
 
 -- RIGHT bottom bar — Export + Copy Script
 local rightBottomBar = mkFrame(rspyContent,
