@@ -687,10 +687,39 @@ local function loadTool(url, statusLabel, btn, originalText)
 end
 
 dexBtn.MouseButton1Click:Connect(function()
-    loadTool(
-        "https://raw.githubusercontent.com/TotallyNotHacking/Dex/master/Dex.lua",
-        dexStatus, dexBtn, "▶ Load"
-    )
+    -- Cuba infyiff backup dulu (maintained, mobile-friendly)
+    -- Fallback: LorekeeperZinnia official, mobile version
+    local urls = {
+        "https://raw.githubusercontent.com/infyiff/backup/main/dex.lua",
+        "https://raw.githubusercontent.com/realredz/DEX-Explorer/refs/heads/main/Mobile.lua",
+        "https://raw.githubusercontent.com/LorekeeperZinnia/Dex/refs/heads/master/main.lua",
+    }
+    dexStatus.Text = "⏳ Loading..."; dexStatus.TextColor3 = C.goldText
+    dexBtn.Text = "Loading..."; dexBtn.BackgroundColor3 = C.dimDark
+
+    task.spawn(function()
+        local loaded = false
+        for _, url in ipairs(urls) do
+            local ok, err = pcall(function()
+                local src = game:HttpGet(url)
+                local fn, lerr = loadstring(src)
+                if not fn then error(lerr) end
+                fn()
+            end)
+            if ok then
+                loaded = true
+                dexStatus.Text = "✓ Loaded!"; dexStatus.TextColor3 = C.green
+                dexBtn.Text = "✓ Done"; dexBtn.BackgroundColor3 = C.green
+                addConLog("Dex loaded!", C.green,"[tools]")
+                break
+            end
+        end
+        if not loaded then
+            dexStatus.Text = "✗ All URLs failed"; dexStatus.TextColor3 = C.red
+            dexBtn.Text = "▶ Load"; dexBtn.BackgroundColor3 = C.green
+            addConLog("Dex: semua URLs gagal. Cuba Custom URL.", C.red,"[tools]")
+        end
+    end)
 end)
 
 sspyBtn.MouseButton1Click:Connect(function()
