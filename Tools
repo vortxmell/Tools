@@ -289,8 +289,9 @@ local function setTab(name)
     for k,c in pairs(tabContents) do c.Visible = k==name end
 end
 
-local conTab  = mkBtn(tabBar,"🖥 Console",UDim2.new(0,58,1,-4),UDim2.new(0,4,0,2), C.tabInactive,C.dim,10)
-local rspyTab = mkBtn(tabBar,"⚡ rSpy",   UDim2.new(0,52,1,-4),UDim2.new(0,66,0,2),C.tabInactive,C.dim,10)
+local conTab   = mkBtn(tabBar,"🖥 Console",UDim2.new(0,58,1,-4),UDim2.new(0,4,0,2),  C.tabInactive,C.dim,10)
+local rspyTab  = mkBtn(tabBar,"⚡ rSpy",   UDim2.new(0,52,1,-4),UDim2.new(0,66,0,2), C.tabInactive,C.dim,10)
+local toolsTab = mkBtn(tabBar,"🔧 Tools",  UDim2.new(0,50,1,-4),UDim2.new(0,122,0,2),C.tabInactive,C.dim,10)
 
 local conContent = mkFrame(mainWin,
     UDim2.new(1,0,1,-HEADER_H), UDim2.new(0,0,0,HEADER_H), C.bg, 0)
@@ -302,13 +303,21 @@ local rspyContent = mkFrame(mainWin,
 rspyContent.ClipsDescendants = true
 rspyContent.Visible          = false
 
+local toolsContent = mkFrame(mainWin,
+    UDim2.new(1,0,1,-HEADER_H), UDim2.new(0,0,0,HEADER_H), C.bg, 0)
+toolsContent.ClipsDescendants = true
+toolsContent.Visible          = false
+
 tabs["console"]        = conTab
 tabs["rspy"]           = rspyTab
+tabs["tools"]          = toolsTab
 tabContents["console"] = conContent
 tabContents["rspy"]    = rspyContent
+tabContents["tools"]   = toolsContent
 
-conTab.MouseButton1Click:Connect(function()  setTab("console") end)
-rspyTab.MouseButton1Click:Connect(function() setTab("rspy")    end)
+conTab.MouseButton1Click:Connect(function()   setTab("console") end)
+rspyTab.MouseButton1Click:Connect(function()  setTab("rspy")    end)
+toolsTab.MouseButton1Click:Connect(function() setTab("tools")   end)
 
 -- ================================================
 -- RESIZE HANDLE
@@ -559,6 +568,146 @@ conSearch:GetPropertyChangedSignal("Text"):Connect(function()
             end
         end
     end
+end)
+
+-- ================================================
+-- ===== TOOLS TAB =====
+-- ================================================
+
+-- Tool card builder helper
+local function mkToolCard(parent, yPos, icon, title, desc, btnText, btnColor)
+    local card = mkFrame(parent,
+        UDim2.new(1,-16,0,70),
+        UDim2.new(0,8,0,yPos),
+        C.panelDark, 6)
+    mkStroke(card, C.gold, 1)
+
+    -- Icon
+    mkLabel(card, icon,
+        UDim2.new(0,36,0,36), UDim2.new(0,6,0,8),
+        C.goldText, 22, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
+
+    -- Title
+    mkLabel(card, title,
+        UDim2.new(1,-120,0,18), UDim2.new(0,48,0,8),
+        C.goldText, 12, Enum.Font.GothamBold)
+
+    -- Description
+    mkLabel(card, desc,
+        UDim2.new(1,-120,0,28), UDim2.new(0,48,0,26),
+        C.dim, 9, Enum.Font.Gotham)
+
+    -- Load button
+    local btn = mkBtn(card, btnText,
+        UDim2.new(0,80,0,26), UDim2.new(1,-86,0,22),
+        btnColor, C.bg, 11)
+
+    -- Status label
+    local status = mkLabel(card, "",
+        UDim2.new(0,80,0,16), UDim2.new(1,-86,0,50),
+        C.dim, 9, Enum.Font.Gotham, Enum.TextXAlignment.Center)
+
+    return btn, status
+end
+
+-- Tool 1: Dex Explorer
+local dexBtn, dexStatus = mkToolCard(toolsContent, 8,
+    "📦", "Dex Explorer",
+    "Full instance explorer\nBrowse game tree, properties",
+    "▶ Load", C.green)
+
+-- Tool 2: Simple Spy V3
+local sspyBtn, sspyStatus = mkToolCard(toolsContent, 86,
+    "🔍", "Simple Spy V3",
+    "Standalone remote spy\nBy exx — IY integration",
+    "▶ Load", C.blue)
+
+-- Tool 3: Custom URL
+local customCard = mkFrame(toolsContent,
+    UDim2.new(1,-16,0,86),
+    UDim2.new(0,8,0,164),
+    C.panelDark, 6)
+mkStroke(customCard, C.gold, 1)
+
+mkLabel(customCard, "⚙",
+    UDim2.new(0,36,0,36), UDim2.new(0,6,0,8),
+    C.goldText, 22, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
+
+mkLabel(customCard, "Custom Tool",
+    UDim2.new(1,-16,0,18), UDim2.new(0,48,0,8),
+    C.goldText, 12, Enum.Font.GothamBold)
+
+mkLabel(customCard, "Load any script dari URL",
+    UDim2.new(1,-16,0,14), UDim2.new(0,48,0,26),
+    C.dim, 9)
+
+local customUrlInput = mkInput(customCard,
+    "https://raw.githubusercontent.com/...",
+    UDim2.new(1,-16,0,22), UDim2.new(0,8,0,42))
+customUrlInput.TextSize = 9
+
+local customLoadBtn = mkBtn(customCard, "▶ Load",
+    UDim2.new(0,60,0,22), UDim2.new(1,-68,0,42),
+    C.goldBr, C.bg, 11)
+
+local customStatus = mkLabel(customCard, "",
+    UDim2.new(1,-16,0,14), UDim2.new(0,8,0,66),
+    C.dim, 9, Enum.Font.Gotham, Enum.TextXAlignment.Center)
+
+-- ================================================
+-- TOOLS HANDLERS
+-- ================================================
+local function loadTool(url, statusLabel, btn, originalText)
+    statusLabel.Text      = "⏳ Loading..."
+    statusLabel.TextColor3 = C.goldText
+    btn.Text              = "Loading..."
+    btn.BackgroundColor3  = C.dimDark
+
+    task.spawn(function()
+        local ok, err = pcall(function()
+            local src = game:HttpGet(url)
+            local fn, lerr = loadstring(src)
+            if not fn then error(lerr) end
+            fn()
+        end)
+        if ok then
+            statusLabel.Text       = "✓ Loaded!"
+            statusLabel.TextColor3 = C.green
+            btn.Text               = "✓ Done"
+            btn.BackgroundColor3   = C.green
+            addConLog("Tool loaded: "..url:match("([^/]+)$"), C.green,"[tools]")
+        else
+            statusLabel.Text       = "✗ "..(tostring(err):sub(1,40))
+            statusLabel.TextColor3 = C.red
+            btn.Text               = originalText
+            btn.BackgroundColor3   = C.dimDark
+            addConLog("Tool error: "..tostring(err), C.red,"[tools]")
+        end
+    end)
+end
+
+dexBtn.MouseButton1Click:Connect(function()
+    loadTool(
+        "https://raw.githubusercontent.com/TotallyNotHacking/Dex/master/Dex.lua",
+        dexStatus, dexBtn, "▶ Load"
+    )
+end)
+
+sspyBtn.MouseButton1Click:Connect(function()
+    loadTool(
+        "https://raw.githubusercontent.com/infyiff/backup/main/SimpleSpyV3/main.lua",
+        sspyStatus, sspyBtn, "▶ Load"
+    )
+end)
+
+customLoadBtn.MouseButton1Click:Connect(function()
+    local url = customUrlInput.Text:match("^%s*(.-)%s*$")
+    if url == "" or not url:find("^https?://") then
+        customStatus.Text       = "✗ URL tidak valid"
+        customStatus.TextColor3 = C.red
+        return
+    end
+    loadTool(url, customStatus, customLoadBtn, "▶ Load")
 end)
 
 -- ================================================
