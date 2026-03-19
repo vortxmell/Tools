@@ -764,13 +764,14 @@ local argsEditorLabel = mkLabel(rightPanel,
     UDim2.new(0,4,0.24,0),
     C.goldText, 9, Enum.Font.GothamBold)
 
--- Args editor frame — dari 27% ke 60%
+-- Args editor frame — fixed height 70px
 local argsEditorFrame = mkFrame(rightPanel,
-    UDim2.new(1,-8,0.33,-4),
+    UDim2.new(1,-8,0,70),
     UDim2.new(0,4,0.27,0),
     C.bg, 4)
 mkStroke(argsEditorFrame, C.gold, 1)
 argsEditorFrame.ZIndex = 2
+argsEditorFrame.ClipsDescendants = true
 
 local argsEditor = Instance.new("TextBox")
 argsEditor.Size = UDim2.new(1,-8,1,-8)
@@ -811,7 +812,9 @@ local spamPanel = mkFrame(rightPanel,
 mkStroke(spamPanel, C.orange, 1)
 spamPanel.ClipsDescendants = false
 spamPanel.ZIndex = 10
+spamPanel.Active = false
 spamPanel.Visible = false
+spamPanel.Active = false
 
 -- Interval row
 mkLabel(spamPanel, "Interval (ms):",
@@ -1187,16 +1190,17 @@ local spamCount    = 0
 local spamPanelOpen = false
 
 -- Toggle spam panel visibility
-spamToggleBtn.Activated:Connect(function()
+spamToggleBtn.MouseButton1Click:Connect(function()
     spamPanelOpen = not spamPanelOpen
     spamPanel.Visible = spamPanelOpen
+    spamPanel.Active = spamPanelOpen
     spamToggleBtn.BackgroundColor3 = spamPanelOpen and C.orange or C.gold
     spamToggleBtn.TextColor3 = spamPanelOpen and C.bg or C.bg
     spamToggleBtn.Text = spamPanelOpen and "⏱ Spam ▲" or "⏱ Spam"
 end)
 
 -- Replay Once
-replayBtn.Activated:Connect(function()
+replayBtn.MouseButton1Click:Connect(function()
     -- Release TextBox focus dulu supaya tak block
     argsEditor:ReleaseFocus()
     task.defer(function()
@@ -1222,7 +1226,7 @@ replayBtn.Activated:Connect(function()
 end)
 
 -- Spam Start
-spamStartBtn.Activated:Connect(function()
+spamStartBtn.MouseButton1Click:Connect(function()
     if not selectedLog then
         spamStartBtn.Text = "Select log!"
         task.delay(1.5, function() spamStartBtn.Text = "▶ Start" end)
@@ -1263,7 +1267,7 @@ spamStartBtn.Activated:Connect(function()
 end)
 
 -- Spam Stop
-spamStopBtn.Activated:Connect(function()
+spamStopBtn.MouseButton1Click:Connect(function()
     spamActive = false
     addConLog("Spam stopped. Total fired: "..spamCount, C.green, "[rspy]")
 end)
