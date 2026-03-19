@@ -1,5 +1,5 @@
 -- ================================================
--- Hub Tools v2.2 — rSpy + Console (Tab System)
+-- Hub Tools v2.3 — rSpy + Console (Tab System)
 -- Gold Theme | Resizeable | Universal
 -- ================================================
 
@@ -167,10 +167,15 @@ local function mkStroke(parent,color,thick)
 end
 
 -- ================================================
--- MAIN WINDOW
+-- MAIN WINDOW — kecik muat screen mobile
+-- Title(26) + Tab(26) = 52px total header
 -- ================================================
 local WIN_W, WIN_H = 360, 420
 local MIN_W, MIN_H = 260, 300
+local TITLE_H = 26
+local TAB_H   = 26
+local HEADER_H = TITLE_H + TAB_H  -- 52
+
 local mainWin = mkFrame(gui,
     UDim2.new(0,WIN_W,0,WIN_H),
     UDim2.new(0.5,-WIN_W/2,0.5,-WIN_H/2),
@@ -181,64 +186,107 @@ mainWin.ClipsDescendants = true
 mkStroke(mainWin, C.gold, 1.5)
 
 -- ================================================
--- TITLE BAR
+-- KEYBOARD FOLLOW (Camera ViewportSize)
+-- ================================================
+local kbBaseY  = nil
+local kbActive = false
+local cam      = workspace.CurrentCamera
+local lastVpH  = cam.ViewportSize.Y
+
+cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+    local newH = cam.ViewportSize.Y
+    local diff = lastVpH - newH
+
+    if diff > 100 and not kbActive then
+        kbActive = true
+        local absX = mainWin.AbsolutePosition.X
+        local absY = mainWin.AbsolutePosition.Y
+        kbBaseY = absY
+        local newY = math.max(5, absY - diff)
+        mainWin.Position = UDim2.new(0, absX, 0, newY)
+    elseif diff < -100 and kbActive then
+        kbActive = false
+        if kbBaseY then
+            local absX = mainWin.AbsolutePosition.X
+            mainWin.Position = UDim2.new(0, absX, 0, kbBaseY)
+            kbBaseY = nil
+        end
+    end
+
+    lastVpH = newH
+end)
+
+-- ================================================
+-- TITLE BAR — nipis
 -- ================================================
 local titleBar = mkFrame(mainWin,
-    UDim2.new(1,0,0,26),   -- was 34
+    UDim2.new(1,0,0,TITLE_H),
     UDim2.new(0,0,0,0),
     C.gold, 8)
 
 mkLabel(titleBar, "🔧  Hub Tools",
     UDim2.new(1,-70,1,0),
     UDim2.new(0,8,0,0),
-    C.bg, 12, Enum.Font.GothamBold)  -- was 15
+    C.bg, 12, Enum.Font.GothamBold)
 
 local minBtn = mkBtn(titleBar, "—",
     UDim2.new(0,22,0,18),
     UDim2.new(1,-46,0,4),
-    C.dimDark, C.goldText, 12)  -- was 28,22
+    C.dimDark, C.goldText, 12)
 
 local closeBtn = mkBtn(titleBar, "✕",
     UDim2.new(0,22,0,18),
     UDim2.new(1,-23,0,4),
-    C.red, C.white, 11)  -- was 28,22
+    C.red, C.white, 11)
 
 -- ================================================
--- TAB BAR
+-- TAB BAR — nipis, tab kecik
 -- ================================================
 local tabBar = mkFrame(mainWin,
- local tabBar = mkFrame(mainWin,
-    UDim2.new(1,0,0,26),   -- was 32
-    UDim2.new(0,0,0,26),   -- was 34 (ikut title height baru)
+    UDim2.new(1,0,0,TAB_H),
+    UDim2.new(0,0,0,TITLE_H),
     C.panelDark, 0)
 
--- Tab buttons — lebar 50% dari asal, nipis
+local tabs = {}
+local tabContents = {}
+
+local function setTab(name)
+    activeTab = name
+    for tname,btn in pairs(tabs) do
+        btn.BackgroundColor3 = tname==name and C.tabActive or C.tabInactive
+        btn.TextColor3 = tname==name and C.goldText or C.dim
+    end
+    for tname,content in pairs(tabContents) do
+        content.Visible = tname==name
+    end
+end
+
+-- Console tab kiri, rSpy kanan — lebar 50% dari asal
 local conTab = mkBtn(tabBar, "🖥 Console",
-    UDim2.new(0,58,1,-4), UDim2.new(0,4,0,2),   -- was 110
-    C.tabInactive, C.dim, 10)                     -- was 12
+    UDim2.new(0,58,1,-4), UDim2.new(0,4,0,2),
+    C.tabInactive, C.dim, 10)
 
 local rspyTab = mkBtn(tabBar, "⚡ rSpy",
-    UDim2.new(0,52,1,-4), UDim2.new(0,66,0,2),  -- was 100, pos 118
-    C.tabInactive, C.dim, 10)                     -- was 12
+    UDim2.new(0,52,1,-4), UDim2.new(0,66,0,2),
+    C.tabInactive, C.dim, 10)
 
--- CONTENT FRAMES (line 237-249)
--- Title(26) + Tab(26) = 52 total offset
+-- Content frames — start selepas header
 local conContent = mkFrame(mainWin,
-    UDim2.new(1,0,1,-52),   -- was 1,-66
-    UDim2.new(0,0,0,52),    -- was 0,0,0,66
+    UDim2.new(1,0,1,-HEADER_H),
+    UDim2.new(0,0,0,HEADER_H),
     C.bg, 0)
 conContent.ClipsDescendants = true
 conContent.Visible = false
 
 local rspyContent = mkFrame(mainWin,
-    UDim2.new(1,0,1,-52),   -- was 1,-66
-    UDim2.new(0,0,0,52),    -- was 0,0,0,66
+    UDim2.new(1,0,1,-HEADER_H),
+    UDim2.new(0,0,0,HEADER_H),
     C.bg, 0)
 rspyContent.ClipsDescendants = true
 rspyContent.Visible = false
 
-tabs["console"] = conTab
-tabs["rspy"]    = rspyTab
+tabs["console"]        = conTab
+tabs["rspy"]           = rspyTab
 tabContents["console"] = conContent
 tabContents["rspy"]    = rspyContent
 
@@ -264,7 +312,7 @@ local resizeStart, sizeStart
 resizeHandle.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.Touch
     or input.UserInputType == Enum.UserInputType.MouseButton1 then
-        resizing = true
+        resizing    = true
         resizeStart = Vector2.new(input.Position.X, input.Position.Y)
         sizeStart   = Vector2.new(mainWin.AbsoluteSize.X, mainWin.AbsoluteSize.Y)
     end
@@ -296,12 +344,12 @@ local minimized = false
 minBtn.MouseButton1Click:Connect(function()
     minimized = not minimized
     tabBar.Visible = not minimized
-    for tname, c in pairs(tabContents) do
-        c.Visible = not minimized and (tname == activeTab)
+    for tname,c in pairs(tabContents) do
+        c.Visible = not minimized and (tname==activeTab)
     end
     resizeHandle.Visible = not minimized
     if minimized then
-        mainWin.Size = UDim2.new(0, mainWin.AbsoluteSize.X, 0, 34)
+        mainWin.Size = UDim2.new(0, mainWin.AbsoluteSize.X, 0, TITLE_H)
         minBtn.Text = "□"
     else
         mainWin.Size = UDim2.new(0,
@@ -316,11 +364,9 @@ closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
 -- ================================================
 -- ===== CONSOLE TAB =====
 -- ================================================
-
--- Shared code state — SINGLE SOURCE OF TRUTH
 local sharedCode = ""
 
--- Exec bar (always visible in console tab)
+-- Exec bar
 local execBar = mkFrame(conContent,
     UDim2.new(1,-16,0,34),
     UDim2.new(0,8,0,6),
@@ -342,7 +388,7 @@ local runBtn = mkBtn(execBar, "▶ Run",
     UDim2.new(1,-50,0,2),
     C.green, C.bg, 12)
 
--- Normal mode panel (toolbar + search + log)
+-- Normal panel
 local normalPanel = mkFrame(conContent,
     UDim2.new(1,0,1,-44),
     UDim2.new(0,0,0,44),
@@ -390,14 +436,13 @@ local fullPanel = mkFrame(conContent,
 fullPanel.ClipsDescendants = true
 fullPanel.Visible = false
 
--- Simple editor frame (no scroll wrapper)
+-- Simple editor frame (no scroll — direct TextBox)
 local editorFrame = mkFrame(fullPanel,
     UDim2.new(1,-16,1,-34),
     UDim2.new(0,8,0,4),
     C.panelDark, 6)
 mkStroke(editorFrame, C.goldBr, 1.5)
 
--- Full code textbox — fill frame terus
 local fullCodeBox = Instance.new("TextBox")
 fullCodeBox.Size = UDim2.new(1,-8,1,-8)
 fullCodeBox.Position = UDim2.new(0,4,0,4)
@@ -420,7 +465,7 @@ edPad.PaddingLeft = UDim.new(0,4)
 edPad.PaddingTop = UDim.new(0,4)
 edPad.PaddingBottom = UDim.new(0,4)
 
--- Bottom bar
+-- Bottom bar dalam fullPanel
 local clearEditorBtn = mkBtn(fullPanel, "🗑 Clear",
     UDim2.new(0,70,0,26),
     UDim2.new(0,8,1,-30),
@@ -428,36 +473,28 @@ local clearEditorBtn = mkBtn(fullPanel, "🗑 Clear",
 clearEditorBtn.ZIndex = 5
 
 -- ================================================
--- SYNC LOGIC — Single source: sharedCode
+-- SYNC LOGIC
 -- ================================================
-
--- Update single line bar from sharedCode
 local function syncToBar()
-    -- Show first line only in bar
     local firstLine = sharedCode:match("([^\n]*)")
     codeInput.Text = firstLine or sharedCode
 end
 
--- Update fullCodeBox from sharedCode
 local function syncToFull()
     fullCodeBox.Text = sharedCode
 end
 
--- When user types in single line bar
 codeInput:GetPropertyChangedSignal("Text"):Connect(function()
-    if editorFullsize then return end -- ignore if fullsize active
+    if editorFullsize then return end
     sharedCode = codeInput.Text
 end)
 
--- When user types in full editor
 fullCodeBox:GetPropertyChangedSignal("Text"):Connect(function()
     if not editorFullsize then return end
     sharedCode = fullCodeBox.Text
-    -- Sync first line back to bar
     syncToBar()
 end)
 
--- Clear editor button
 clearEditorBtn.MouseButton1Click:Connect(function()
     sharedCode = ""
     fullCodeBox.Text = ""
@@ -471,33 +508,21 @@ local function toggleFullsize()
     editorFullsize = not editorFullsize
 
     if editorFullsize then
-        -- Enter fullsize
         fullsizeBtn.Text = "⊡ Exit"
         fullsizeBtn.BackgroundColor3 = C.goldBr
         fullsizeBtn.TextColor3 = C.bg
-
-        -- Sync current code to full editor
         fullCodeBox.Text = sharedCode
-
-        -- Hide normal, show full
         normalPanel.Visible = false
         fullPanel.Visible = true
-
-        -- Focus editor
         task.defer(function()
             fullCodeBox:CaptureFocus()
         end)
     else
-        -- Exit fullsize
         fullsizeBtn.Text = "⛶ Full"
         fullsizeBtn.BackgroundColor3 = C.dimDark
         fullsizeBtn.TextColor3 = C.goldText
-
-        -- Sync from full editor back
         sharedCode = fullCodeBox.Text
         syncToBar()
-
-        -- Hide full, show normal
         fullPanel.Visible = false
         normalPanel.Visible = true
     end
@@ -506,10 +531,10 @@ end
 fullsizeBtn.MouseButton1Click:Connect(toggleFullsize)
 
 -- ================================================
--- EXECUTE FUNCTION
+-- CONSOLE LOG BUILDER
 -- ================================================
 local function addConLog(text, color, prefix)
-    color = color or C.white
+    color  = color or C.white
     prefix = prefix or ""
     local line = {text=text, color=color, prefix=prefix, time=os.date("%M:%S")}
     table.insert(logLines, line)
@@ -559,10 +584,12 @@ local function addConLog(text, color, prefix)
     end
 end
 
+-- ================================================
+-- EXECUTE
+-- ================================================
 local function executeCode(code)
     if code == "" then return end
-    -- Log preview
-    local preview = code:match("([^\n]*)")
+    local preview = code:match("([^\n]*)") or ""
     addConLog("> "..(#preview>55 and preview:sub(1,55).."..." or preview),
         C.goldText, "[exec]")
 
@@ -578,10 +605,7 @@ local function executeCode(code)
         addConLog(tostring(err), C.red, "[err]")
     end
 
-    -- Switch to normal view to see result if in fullsize
-    if editorFullsize then
-        toggleFullsize()
-    end
+    if editorFullsize then toggleFullsize() end
 end
 
 runBtn.MouseButton1Click:Connect(function()
@@ -626,7 +650,7 @@ conSearch:GetPropertyChangedSignal("Text"):Connect(function()
     for _,row in pairs(conScroll:GetChildren()) do
         if row:IsA("Frame") then
             for _,child in pairs(row:GetChildren()) do
-                if child:IsA("TextLabel") and child.Font == Enum.Font.Code then
+                if child:IsA("TextLabel") and child.Font==Enum.Font.Code then
                     row.Visible = f=="" or child.Text:lower():find(f,1,true)~=nil
                     break
                 end
@@ -707,8 +731,8 @@ local function describeValue(v)
     if t == "buffer" then
         local len = buffer.len(v)
         local hex = {}
-        for i = 0,math.min(len-1,6) do
-            table.insert(hex, string.format("%02X",buffer.readu8(v,i)))
+        for i=0,math.min(len-1,6) do
+            table.insert(hex,string.format("%02X",buffer.readu8(v,i)))
         end
         return string.format("<buf:%db>[%s%s]",
             len,table.concat(hex," "),len>7 and "..." or "")
@@ -989,7 +1013,7 @@ startHook()
 -- ================================================
 setTab("console")
 
-addConLog("Hub Tools v2.2 loaded!", C.green, "[sys]")
-addConLog("⛶ Full = editor fullsize, tekan lagi untuk exit", C.dim, "[sys]")
-addConLog("Run akan auto exit fullsize & tunjuk result", C.dim, "[sys]")
-addConLog("Drag corner ⤡ untuk resize window", C.dim, "[sys]")
+addConLog("Hub Tools v2.3 loaded!", C.green, "[sys]")
+addConLog("Window kecik — resize dengan drag ⤡", C.dim, "[sys]")
+addConLog("⛶ Full = fullsize editor", C.dim, "[sys]")
+addConLog("UI naik bila keyboard buka", C.dim, "[sys]")
