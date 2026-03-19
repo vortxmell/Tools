@@ -1040,9 +1040,9 @@ exportSelBtn.MouseButton1Click:Connect(function()
             table.insert(parts, part)
         end
         if #parts == 0 then return nil end
-        local chain = string.format('game:GetService("%s")', parts[1])
+        local chain = 'game:GetService("' .. parts[1] .. '")'
         for i = 2, #parts do
-            chain = chain .. string.format(':WaitForChild("%s")', parts[i])
+            chain = chain .. ':WaitForChild("' .. parts[i] .. '")'
         end
         return chain
     end
@@ -1054,9 +1054,9 @@ exportSelBtn.MouseButton1Click:Connect(function()
         for _, v in ipairs(args) do
             local t = type(v)
             if t == "string" then
-                table.insert(out, string.format('\t"%s"', v:gsub('"', '\\"')))
+                table.insert(out, '\t"' .. v:gsub('"', '\\"') .. '"')
             elseif t == "number" or t == "boolean" then
-                table.insert(out, "\t"..tostring(v))
+                table.insert(out, "\t" .. tostring(v))
             elseif t == "buffer" then
                 table.insert(out, "\t-- <buffer> semak Hex panel")
             else
@@ -1113,9 +1113,9 @@ copyScriptBtn.MouseButton1Click:Connect(function()
             table.insert(parts, part)
         end
         if #parts == 0 then return nil end
-        local chain = string.format("game:GetService(\"%s\")", parts[1])
+        local chain = 'game:GetService("' .. parts[1] .. '")'
         for i = 2, #parts do
-            chain = chain .. string.format(":WaitForChild(\"%s\")", parts[i])
+            chain = chain .. ':WaitForChild("' .. parts[i] .. '")'
         end
         return chain
     end
@@ -1126,7 +1126,7 @@ copyScriptBtn.MouseButton1Click:Connect(function()
         for _, v in ipairs(args) do
             local t = type(v)
             if t == "string" then
-                table.insert(out, string.format("\t\"%s\"", v:gsub("\"", "\\"")))
+                table.insert(out, '\t"' .. v:gsub('"', '\\"') .. '"')
             elseif t == "number" or t == "boolean" then
                 table.insert(out, "\t"..tostring(v))
             elseif t == "buffer" then
