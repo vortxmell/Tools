@@ -367,6 +367,12 @@ closeBtn.MouseButton1Click:Connect(function()
     _G.testReplay   = nil
     _G.hubGui       = nil
     _G.hubParent    = nil
+    _G.fire         = nil
+    _G.rspy         = nil
+    _G.bookmark     = nil
+    _G.bookmarks    = nil
+    _G.unbookmark   = nil
+    _G.bfire        = nil
     -- Restore print/warn
     print = _print
     warn  = _warn
@@ -1203,6 +1209,7 @@ local function addRspyLog(dir, name, path, args, returnVal, remoteClass)
     mkLabel(ibadge,iStr,UDim2.new(1,0,1,0),nil,iColor,9,Enum.Font.GothamBold,Enum.TextXAlignment.Center)
 
     mkLabel(row,"x"..remoteCount[path],UDim2.new(0,24,0,14),UDim2.new(1,-83,0,2),C.dimDark,9,Enum.Font.Gotham,Enum.TextXAlignment.Right)
+    mkLabel(row,ts,UDim2.new(0,32,0,12),UDim2.new(1,-83,0,18),C.dimDark,8,Enum.Font.Gotham,Enum.TextXAlignment.Right)
     mkLabel(row,name,UDim2.new(1,-nameX-90,0,14),UDim2.new(0,nameX,0,2),C.goldText,11,Enum.Font.GothamBold)
     mkLabel(row,argsStr,UDim2.new(1,-8,0,13),UDim2.new(0,4,0,18),C.white,9,Enum.Font.Code)
 
@@ -1599,6 +1606,133 @@ _G.consoleClear = function()
     conCount.Text = "0 lines"
 end
 
+-- ── _G.fire() — quick fire remote dari console ──
+-- Usage: _G.fire("RemoteName", arg1, arg2, ...)
+-- atau:  _G.fire("Full.Path.To.Remote", arg1, arg2)
+_G.fire = function(nameOrPath, ...)
+    local args = {...}
+    -- Cuba find remote by full path dulu, then by name
+    local remote = nil
+    local path = nameOrPath
+
+    -- Check sama ada full path atau name je
+    if nameOrPath:find("%.") then
+        -- Full path — walk descendants
+        local parts = {}
+        for p in nameOrPath:gmatch("[^%.]+") do table.insert(parts, p) end
+        local ok, obj = pcall(function()
+            local o = game:GetService(parts[1])
+            for i=2,#parts do o = o:FindFirstChild(parts[i]) end
+            return o
+        end)
+        if ok and obj then remote = obj end
+    else
+        -- Name je — search dalam game descendants
+        local ok, obj = pcall(function()
+            return game:GetDescendants()
+        end)
+        if ok then
+            for _, v in ipairs(obj) do
+                if (v:IsA("RemoteEvent") or v:IsA("RemoteFunction") or v:IsA("UnreliableRemoteEvent"))
+                and v.Name == nameOrPath then
+                    remote = v; break
+                end
+            end
+        end
+    end
+
+    if not remote then
+        addConLog("fire: remote '"..nameOrPath.."' tidak dijumpai", C.red,"[fire]")
+        return false
+    end
+
+    -- Fire ikut class
+    local fireOk, fireErr
+    if remote:IsA("RemoteFunction") then
+        fireOk, fireErr = pcall(function() return remote:InvokeServer(table.unpack(args)) end)
+    elseif remote:IsA("UnreliableRemoteEvent") then
+        fireOk, fireErr = pcall(function() remote:FireUnreliableServer(table.unpack(args)) end)
+    else
+        fireOk, fireErr = pcall(function() remote:FireServer(table.unpack(args)) end)
+    end
+
+    if fireOk then
+        addConLog("fire: "..remote:GetFullName().." ✓", C.green,"[fire]")
+    else
+        addConLog("fire error: "..tostring(fireErr), C.red,"[fire]")
+    end
+    return fireOk
+end
+
+-- ── _G.rspy() — rspy control dari console ──
+-- _G.rspy("play")  → start capture
+-- _G.rspy("stop")  → stop capture
+-- _G.rspy("clear") → clear logs
+-- _G.rspy("logs")  → return remoteLogs table
+_G.rspy = function(cmd)
+    if cmd == "play" then
+        rspyVisible = true
+        pauseBtn.Text = "⏹ Stop"; pauseBtn.BackgroundColor3 = C.orange
+        rspyStatus.Text = "● Listening..."; rspyStatus.TextColor3 = C.green
+        addConLog("rSpy: capturing", C.green,"[rspy]")
+    elseif cmd == "stop" then
+        rspyVisible = false
+        pauseBtn.Text = "▶ Play"; pauseBtn.BackgroundColor3 = C.green
+        rspyStatus.Text = "⏹ Stopped"; rspyStatus.TextColor3 = C.red
+        addConLog("rSpy: stopped", C.dim,"[rspy]")
+    elseif cmd == "clear" then
+        remoteLogs={}; remoteCount={}; remoteLastFire={}
+        filterRateTrack={}; filterSeen={}
+        for _,c in pairs(rspyScroll:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
+        rspyCount.Text="0 events"
+        addConLog("rSpy: cleared", C.dim,"[rspy]")
+    elseif cmd == "logs" then
+        return remoteLogs
+    else
+        addConLog("rspy: play | stop | clear | logs", C.dim,"[rspy]")
+    end
+end
+
+-- ── Bookmark system ──
+local bookmarks = {}
+
+-- _G.bookmark() — bookmark selected log
+-- _G.bookmarks  — list all bookmarks
+-- _G.unbookmark(name) — remove bookmark
+_G.bookmark = function(alias)
+    if not selectedLog then
+        addConLog("bookmark: select log dulu dalam rSpy", C.red,"[bm]"); return
+    end
+    alias = alias or selectedLog.name
+    bookmarks[alias] = selectedLog
+    addConLog("Bookmarked: "..alias.." → "..selectedLog.path, C.goldText,"[bm]")
+end
+
+_G.bookmarks = bookmarks
+
+_G.unbookmark = function(alias)
+    if bookmarks[alias] then
+        bookmarks[alias] = nil
+        addConLog("Removed bookmark: "..alias, C.dim,"[bm]")
+    else
+        addConLog("bookmark '"..alias.."' tidak wujud", C.red,"[bm]")
+    end
+end
+
+-- Fire bookmarked remote terus
+-- Usage: _G.bfire("alias", arg1, arg2)
+_G.bfire = function(alias, ...)
+    local log = bookmarks[alias]
+    if not log then
+        addConLog("bfire: bookmark '"..alias.."' tidak wujud", C.red,"[bm]")
+        addConLog("Available: "..table.concat((function()
+            local t={} for k in pairs(bookmarks) do table.insert(t,k) end return t
+        end)(), ", "), C.dim,"[bm]")
+        return false
+    end
+    return _G.fire(log.path, ...)
+end
+
 -- ================================================
 -- OVERRIDE print / warn
 -- checkcaller() — kalau game script yang call print/warn,
@@ -1725,9 +1859,82 @@ end
 startHook()
 
 -- ================================================
+-- SECURITY: Anti-Screenshot
+-- Hide GUI bila Roblox screenshot/capture
+-- ================================================
+local CaptureService = pcall(function()
+    return game:GetService("CaptureService")
+end) and game:GetService("CaptureService") or nil
+
+if CaptureService then
+    pcall(function()
+        CaptureService.CaptureBegan:Connect(function()
+            gui.Enabled = false
+        end)
+        CaptureService.CaptureEnded:Connect(function()
+            task.delay(0.1, function()
+                gui.Enabled = true
+            end)
+        end)
+    end)
+end
+
+-- ================================================
+-- SECURITY: Auto-clear on anti-cheat scan detection
+-- Detect bila game script cuba iterate PlayerGui
+-- atau scan descendants — clear logs immediately
+-- ================================================
+local function setupAntiScan()
+    -- Monitor PlayerGui children access
+    -- Kalau game script buat GetChildren/GetDescendants pada PlayerGui,
+    -- kemungkinan anti-cheat scan — clear rSpy logs
+    if not hookmetamethod then return end
+
+    local scanCount = 0
+    local lastScan  = 0
+
+    -- Hook __namecall untuk detect GetChildren/GetDescendants calls pada pgui
+    local origScanHook = nil
+    origScanHook = hookmetamethod(game, "__namecall", newcclosure and newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        local result = origScanHook(self, ...)
+
+        -- Detect kalau game scan PlayerGui atau CoreGui
+        if (method == "GetChildren" or method == "GetDescendants")
+        and (self == pgui or self == game:GetService("CoreGui")) then
+            local now = os.clock()
+            -- Multiple scans dalam masa singkat = suspicious
+            if now - lastScan < 2 then
+                scanCount += 1
+                if scanCount >= 3 then
+                    -- Possible anti-cheat scan — clear logs
+                    remoteLogs={}; remoteCount={}
+                    for _,c in pairs(rspyScroll:GetChildren()) do
+                        if c:IsA("Frame") then c:Destroy() end
+                    end
+                    rspyCount.Text = "0 events"
+                    scanCount = 0
+                    addConLog("⚠ Possible AC scan detected — logs cleared", C.orange,"[sec]")
+                end
+            else
+                scanCount = 1
+            end
+            lastScan = now
+        end
+
+        return result
+    end) or function(self, ...)
+        return origScanHook(self, ...)
+    end)
+end
+
+pcall(setupAntiScan)
+
+-- ================================================
 -- INIT
 -- ================================================
 setTab("console")
 addConLog("Hub Tools v3.0 loaded!", C.green,"[sys]")
 addConLog("rSpy capture semua — game, console, IY, script lain", C.dim,"[sys]")
 addConLog("Play/Stop control display je, bukan capture", C.dim,"[sys]")
+addConLog("_G.fire(name,args) | _G.rspy(cmd) | _G.bookmark(alias)", C.dim,"[sys]")
