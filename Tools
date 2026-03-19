@@ -543,8 +543,9 @@ local rspyScroll = mkScroll(leftPanel, UDim2.new(1,0,1,0), UDim2.new(0,0,0,0))
 local leftBottomBar = mkFrame(rspyContent,
     UDim2.new(0.5,-8-GAP,0,SPLIT_BOT-4),
     UDim2.new(0,8,1,-SPLIT_BOT), C.panelDark, 5)
-local copyHexBtn = mkBtn(leftBottomBar,"📋 Hex",      UDim2.new(0,58,1,-4), UDim2.new(0,2,0,2),  C.gold,C.bg,11)
-local exportBtn  = mkBtn(leftBottomBar,"📤 Export All",UDim2.new(1,-114,1,-4),UDim2.new(0,64,0,2),C.goldBr,C.bg,11)
+local copyHexBtn = mkBtn(leftBottomBar,"📋 Hex",      UDim2.new(0,52,1,-4), UDim2.new(0,2,0,2),   C.gold,C.bg,11)
+local decodeBtn  = mkBtn(leftBottomBar,"🔍 Decode",   UDim2.new(0,62,1,-4), UDim2.new(0,58,0,2),  C.purple,C.white,11)
+local exportBtn  = mkBtn(leftBottomBar,"📤 Export All",UDim2.new(1,-132,1,-4),UDim2.new(0,124,0,2),C.goldBr,C.bg,11)
 
 -- Right panel — detail + replay/spam
 local rightPanel = mkFrame(rspyContent,
@@ -627,6 +628,242 @@ local rightBottomBar = mkFrame(rspyContent,
     UDim2.new(0.5,GAP,1,-SPLIT_BOT), C.panelDark, 5)
 local exportSelBtn  = mkBtn(rightBottomBar,"📤 Export",     UDim2.new(0.5,-6,1,-4),UDim2.new(0,4,0,2),  C.goldBr,C.bg,11)
 local copyScriptBtn = mkBtn(rightBottomBar,"📋 Copy Script",UDim2.new(0.5,-6,1,-4),UDim2.new(0.5,2,0,2),C.gold,C.bg,11)
+
+-- ================================================
+-- MESSAGEPACK DECODER
+-- Pure Lua implementation
+-- Supports: nil, bool, int, float, string,
+--           binary, array, map (nested)
+-- ================================================
+local MsgPack = {}
+
+local function mpDecode(buf, pos)
+    local b = buffer.readu8(buf, pos)
+    pos += 1
+
+    -- positive fixint 0x00-0x7f
+    if b <= 0x7f then return b, pos end
+
+    -- fixmap 0x80-0x8f
+    if b >= 0x80 and b <= 0x8f then
+        local n = b - 0x80
+        local map = {}
+        for _ = 1, n do
+            local k, v
+            k, pos = mpDecode(buf, pos)
+            v, pos = mpDecode(buf, pos)
+            map[k] = v
+        end
+        return map, pos
+    end
+
+    -- fixarray 0x90-0x9f
+    if b >= 0x90 and b <= 0x9f then
+        local n = b - 0x90
+        local arr = {}
+        for i = 1, n do arr[i], pos = mpDecode(buf, pos) end
+        return arr, pos
+    end
+
+    -- fixstr 0xa0-0xbf
+    if b >= 0xa0 and b <= 0xbf then
+        local n = b - 0xa0
+        if n == 0 then return "", pos end
+        local chars = {}
+        for i = 0, n-1 do
+            table.insert(chars, string.char(buffer.readu8(buf, pos+i)))
+        end
+        return table.concat(chars), pos + n
+    end
+
+    -- nil
+    if b == 0xc0 then return nil, pos end
+
+    -- false
+    if b == 0xc2 then return false, pos end
+
+    -- true
+    if b == 0xc3 then return true, pos end
+
+    -- bin8
+    if b == 0xc4 then
+        local n = buffer.readu8(buf, pos); pos += 1
+        local hex = {}
+        for i = 0, n-1 do table.insert(hex, string.format("%02X", buffer.readu8(buf, pos+i))) end
+        return "<bin:"..n.."b>["..table.concat(hex," ").."]", pos + n
+    end
+
+    -- bin16
+    if b == 0xc5 then
+        local n = buffer.readu16(buf, pos); pos += 2
+        local hex = {}
+        for i = 0, math.min(n-1,15) do table.insert(hex, string.format("%02X", buffer.readu8(buf, pos+i))) end
+        return "<bin:"..n.."b>["..table.concat(hex," ")..(n>16 and "..." or "").."]", pos + n
+    end
+
+    -- float32
+    if b == 0xca then
+        local v = buffer.readf32(buf, pos); pos += 4
+        return v, pos
+    end
+
+    -- float64
+    if b == 0xcb then
+        local v = buffer.readf64(buf, pos); pos += 8
+        return v, pos
+    end
+
+    -- uint8
+    if b == 0xcc then local v = buffer.readu8(buf, pos);  pos+=1; return v, pos end
+    -- uint16
+    if b == 0xcd then local v = buffer.readu16(buf, pos); pos+=2; return v, pos end
+    -- uint32
+    if b == 0xce then local v = buffer.readu32(buf, pos); pos+=4; return v, pos end
+
+    -- int8
+    if b == 0xd0 then local v = buffer.readi8(buf, pos);  pos+=1; return v, pos end
+    -- int16
+    if b == 0xd1 then local v = buffer.readi16(buf, pos); pos+=2; return v, pos end
+    -- int32
+    if b == 0xd2 then local v = buffer.readi32(buf, pos); pos+=4; return v, pos end
+
+    -- str8
+    if b == 0xd9 then
+        local n = buffer.readu8(buf, pos); pos += 1
+        local chars = {}
+        for i = 0, n-1 do table.insert(chars, string.char(buffer.readu8(buf, pos+i))) end
+        return table.concat(chars), pos + n
+    end
+
+    -- str16
+    if b == 0xda then
+        local n = buffer.readu16(buf, pos); pos += 2
+        local chars = {}
+        for i = 0, n-1 do table.insert(chars, string.char(buffer.readu8(buf, pos+i))) end
+        return table.concat(chars), pos + n
+    end
+
+    -- str32
+    if b == 0xdb then
+        local n = buffer.readu32(buf, pos); pos += 4
+        local chars = {}
+        for i = 0, n-1 do table.insert(chars, string.char(buffer.readu8(buf, pos+i))) end
+        return table.concat(chars), pos + n
+    end
+
+    -- array16
+    if b == 0xdc then
+        local n = buffer.readu16(buf, pos); pos += 2
+        local arr = {}
+        for i = 1, n do arr[i], pos = mpDecode(buf, pos) end
+        return arr, pos
+    end
+
+    -- array32
+    if b == 0xdd then
+        local n = buffer.readu32(buf, pos); pos += 4
+        local arr = {}
+        for i = 1, n do arr[i], pos = mpDecode(buf, pos) end
+        return arr, pos
+    end
+
+    -- map16
+    if b == 0xde then
+        local n = buffer.readu16(buf, pos); pos += 2
+        local map = {}
+        for _ = 1, n do
+            local k, v
+            k, pos = mpDecode(buf, pos)
+            v, pos = mpDecode(buf, pos)
+            map[k] = v
+        end
+        return map, pos
+    end
+
+    -- map32
+    if b == 0xdf then
+        local n = buffer.readu32(buf, pos); pos += 4
+        local map = {}
+        for _ = 1, n do
+            local k, v
+            k, pos = mpDecode(buf, pos)
+            v, pos = mpDecode(buf, pos)
+            map[k] = v
+        end
+        return map, pos
+    end
+
+    -- negative fixint 0xe0-0xff
+    if b >= 0xe0 then return b - 256, pos end
+
+    return "??0x"..string.format("%02X",b), pos
+end
+
+-- Pretty print decoded value
+local function mpPretty(val, indent)
+    indent = indent or 0
+    local pad = string.rep("  ", indent)
+    local t = type(val)
+    if val == nil then return "null"
+    elseif t == "boolean" then return tostring(val)
+    elseif t == "number" then
+        if val == math.floor(val) then return tostring(math.floor(val))
+        else return string.format("%.6g", val) end
+    elseif t == "string" then return '"'..val..'"'
+    elseif t == "table" then
+        -- Check if array
+        local isArr = true
+        local maxN = 0
+        for k,_ in pairs(val) do
+            if type(k) ~= "number" or k ~= math.floor(k) or k < 1 then isArr = false; break end
+            if k > maxN then maxN = k end
+        end
+        if isArr and maxN == #val and maxN > 0 then
+            local lines = {"["}
+            for i, v in ipairs(val) do
+                lines[#lines+1] = pad.."  "..mpPretty(v, indent+1)
+                    ..(i<#val and "," or "")
+            end
+            lines[#lines+1] = pad.."]"
+            return table.concat(lines, "\n")
+        else
+            local lines = {"{"}
+            local i = 0
+            for k, v in pairs(val) do
+                i += 1
+                lines[#lines+1] = pad.."  "..tostring(k)..": "..mpPretty(v, indent+1)
+            end
+            lines[#lines+1] = pad.."}"
+            return table.concat(lines, "\n")
+        end
+    else return tostring(val) end
+end
+
+function MsgPack.decode(buf)
+    local ok, result, _ = pcall(function()
+        return mpDecode(buf, 0)
+    end)
+    if not ok then return nil, "Decode error: "..tostring(result) end
+    return result, nil
+end
+
+function MsgPack.decodeAll(buf)
+    local results = {}
+    local pos = 0
+    local len = buffer.len(buf)
+    while pos < len do
+        local ok, val, newpos = pcall(function()
+            return mpDecode(buf, pos)
+        end)
+        if not ok then
+            table.insert(results, "⚠ Error at byte "..pos..": "..tostring(val))
+            break
+        end
+        table.insert(results, val)
+        pos = newpos
+    end
+    return results
+end
 
 -- ================================================
 -- rSPY HELPERS
@@ -866,6 +1103,63 @@ copyHexBtn.MouseButton1Click:Connect(function()
     if not selectedLog then return end
     copyClip(getHexFull(selectedLog.args))
     copyHexBtn.Text = "✓ Done"; task.delay(1.5, function() copyHexBtn.Text = "📋 Hex" end)
+end)
+
+-- MessagePack Decode
+decodeBtn.MouseButton1Click:Connect(function()
+    if not selectedLog then
+        decodeBtn.Text = "Select log!"
+        task.delay(1.5, function() decodeBtn.Text = "🔍 Decode" end)
+        return
+    end
+
+    -- Cari buffer args
+    local buffers = {}
+    for i, v in ipairs(selectedLog.args) do
+        if type(v) == "buffer" then
+            table.insert(buffers, {idx=i, buf=v})
+        end
+    end
+
+    if #buffers == 0 then
+        -- Tiada buffer — tunjuk dalam detailLabel
+        detailLabel.Text = "⚠ Tiada buffer arg dalam remote ini.\n\nMessagePack decode hanya untuk buffer args.\nRemote ni ada: "..selectedLog.argsStr
+        decodeBtn.Text = "No buf"
+        task.delay(2, function() decodeBtn.Text = "🔍 Decode" end)
+        return
+    end
+
+    -- Decode semua buffer args
+    local outputLines = {"=== MessagePack Decode ==="}
+    table.insert(outputLines, "Remote: "..selectedLog.name)
+    table.insert(outputLines, "")
+
+    for _, entry in ipairs(buffers) do
+        table.insert(outputLines, "[Arg"..entry.idx.."] "..buffer.len(entry.buf).." bytes")
+
+        local results = MsgPack.decodeAll(entry.buf)
+
+        if #results == 0 then
+            table.insert(outputLines, "  ⚠ Empty buffer")
+        elseif #results == 1 then
+            table.insert(outputLines, mpPretty(results[1], 0))
+        else
+            for j, r in ipairs(results) do
+                table.insert(outputLines, "  ["..j.."] "..mpPretty(r, 1))
+            end
+        end
+        table.insert(outputLines, "")
+    end
+
+    local decoded = table.concat(outputLines, "\n")
+
+    -- Tunjuk dalam detailLabel
+    detailLabel.Text = decoded
+
+    -- Copy ke clipboard jugak
+    copyClip(decoded)
+    decodeBtn.Text = "✓ Decoded!"
+    task.delay(2, function() decodeBtn.Text = "🔍 Decode" end)
 end)
 
 -- Export All
