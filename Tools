@@ -169,9 +169,8 @@ end
 -- ================================================
 -- MAIN WINDOW
 -- ================================================
-local WIN_W, WIN_H = 440, 520
-local MIN_W, MIN_H = 320, 380
-
+local WIN_W, WIN_H = 360, 420
+local MIN_W, MIN_H = 260, 300
 local mainWin = mkFrame(gui,
     UDim2.new(0,WIN_W,0,WIN_H),
     UDim2.new(0.5,-WIN_W/2,0.5,-WIN_H/2),
@@ -185,65 +184,55 @@ mkStroke(mainWin, C.gold, 1.5)
 -- TITLE BAR
 -- ================================================
 local titleBar = mkFrame(mainWin,
-    UDim2.new(1,0,0,34),
+    UDim2.new(1,0,0,26),   -- was 34
     UDim2.new(0,0,0,0),
-    C.gold, 10)
+    C.gold, 8)
 
 mkLabel(titleBar, "🔧  Hub Tools",
-    UDim2.new(1,-80,1,0),
-    UDim2.new(0,12,0,0),
-    C.bg, 15, Enum.Font.GothamBold)
+    UDim2.new(1,-70,1,0),
+    UDim2.new(0,8,0,0),
+    C.bg, 12, Enum.Font.GothamBold)  -- was 15
 
 local minBtn = mkBtn(titleBar, "—",
-    UDim2.new(0,28,0,22),
-    UDim2.new(1,-60,0,6),
-    C.dimDark, C.goldText, 14)
+    UDim2.new(0,22,0,18),
+    UDim2.new(1,-46,0,4),
+    C.dimDark, C.goldText, 12)  -- was 28,22
 
 local closeBtn = mkBtn(titleBar, "✕",
-    UDim2.new(0,28,0,22),
-    UDim2.new(1,-30,0,6),
-    C.red, C.white, 13)
+    UDim2.new(0,22,0,18),
+    UDim2.new(1,-23,0,4),
+    C.red, C.white, 11)  -- was 28,22
 
 -- ================================================
 -- TAB BAR
 -- ================================================
 local tabBar = mkFrame(mainWin,
-    UDim2.new(1,0,0,32),
-    UDim2.new(0,0,0,34),
+ local tabBar = mkFrame(mainWin,
+    UDim2.new(1,0,0,26),   -- was 32
+    UDim2.new(0,0,0,26),   -- was 34 (ikut title height baru)
     C.panelDark, 0)
 
-local tabs = {}
-local tabContents = {}
-
-local function setTab(name)
-    activeTab = name
-    for tname, btn in pairs(tabs) do
-        btn.BackgroundColor3 = tname==name and C.tabActive or C.tabInactive
-        btn.TextColor3 = tname==name and C.goldText or C.dim
-    end
-    for tname, content in pairs(tabContents) do
-        content.Visible = tname==name
-    end
-end
-
+-- Tab buttons — lebar 50% dari asal, nipis
 local conTab = mkBtn(tabBar, "🖥 Console",
-    UDim2.new(0,110,1,-4), UDim2.new(0,4,0,2),
-    C.tabInactive, C.dim, 12)
+    UDim2.new(0,58,1,-4), UDim2.new(0,4,0,2),   -- was 110
+    C.tabInactive, C.dim, 10)                     -- was 12
 
 local rspyTab = mkBtn(tabBar, "⚡ rSpy",
-    UDim2.new(0,100,1,-4), UDim2.new(0,118,0,2),
-    C.tabInactive, C.dim, 12)
+    UDim2.new(0,52,1,-4), UDim2.new(0,66,0,2),  -- was 100, pos 118
+    C.tabInactive, C.dim, 10)                     -- was 12
 
+-- CONTENT FRAMES (line 237-249)
+-- Title(26) + Tab(26) = 52 total offset
 local conContent = mkFrame(mainWin,
-    UDim2.new(1,0,1,-66),
-    UDim2.new(0,0,0,66),
+    UDim2.new(1,0,1,-52),   -- was 1,-66
+    UDim2.new(0,0,0,52),    -- was 0,0,0,66
     C.bg, 0)
 conContent.ClipsDescendants = true
 conContent.Visible = false
 
 local rspyContent = mkFrame(mainWin,
-    UDim2.new(1,0,1,-66),
-    UDim2.new(0,0,0,66),
+    UDim2.new(1,0,1,-52),   -- was 1,-66
+    UDim2.new(0,0,0,52),    -- was 0,0,0,66
     C.bg, 0)
 rspyContent.ClipsDescendants = true
 rspyContent.Visible = false
