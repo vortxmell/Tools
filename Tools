@@ -943,18 +943,46 @@ local function generateScript(log)
     local lines    = {}
     if chain then
         if log.dir=="C>S" then
+            -- Detect remote type dari remoteClass atau method
+            local fireMethod = "FireServer"
+            if log.remoteClass == "RemoteFunction" then
+                fireMethod = "InvokeServer"
+            elseif log.remoteClass == "UnreliableRemoteEvent" then
+                fireMethod = "FireUnreliableServer"
+            end
+
             if argLines and #argLines>0 then
                 table.insert(lines,"local args = {")
                 for _,al in ipairs(argLines) do table.insert(lines,al..",") end
                 table.insert(lines,"}")
-                table.insert(lines,chain..":FireServer(unpack(args))")
+                table.insert(lines,chain..":"..fireMethod.."(unpack(args))")
             else
-                table.insert(lines,chain..":FireServer()")
+                table.insert(lines,chain..":"..fireMethod.."()")
+            end
+
+            -- Kalau InvokeServer, tambah comment pasal return value
+            if fireMethod == "InvokeServer" then
+                table.insert(lines,"-- InvokeServer returns value dari server")
+                if log.retStr then
+                    table.insert(lines,"-- Return: "..log.retStr)
+                end
             end
         else
+            -- S>C
+            local eventMethod = "OnClientEvent"
+            if log.remoteClass == "RemoteFunction" then
+                eventMethod = "OnClientInvoke"
+            end
             table.insert(lines,"-- S>C remote, server yang fire")
-            table.insert(lines,chain..":OnClientEvent:Connect(function(...)")
-            table.insert(lines,"\tprint(...)"); table.insert(lines,"end)")
+            if log.remoteClass == "RemoteFunction" then
+                table.insert(lines,chain.."."..eventMethod.." = function(...)")
+                table.insert(lines,"\tprint(...)")
+                table.insert(lines,"\treturn nil -- return value ke server")
+                table.insert(lines,"end")
+            else
+                table.insert(lines,chain..":"..eventMethod..":Connect(function(...)")
+                table.insert(lines,"\tprint(...)"); table.insert(lines,"end)")
+            end
         end
     end
     return table.concat(lines,"\n")
@@ -964,7 +992,7 @@ end
 -- rSPY LOG BUILDER
 -- Hook sentiasa capture. rspyVisible = display control je.
 -- ================================================
-local function addRspyLog(dir, name, path, args, returnVal)
+local function addRspyLog(dir, name, path, args, returnVal, remoteClass)
     -- rspyVisible = false means user stopped display, skip
     if not rspyVisible then return end
     if dirFilter=="cs" and dir~="C>S" then return end
@@ -991,7 +1019,8 @@ local function addRspyLog(dir, name, path, args, returnVal)
         dir=dir, name=name, path=path,
         args=args, argsStr=argsStr,
         isBuf=isBuf, time=ts, intervalMs=intervalMs,
-        returnVal=returnVal, retStr=retStr
+        returnVal=returnVal, retStr=retStr,
+        remoteClass=remoteClass or "RemoteEvent"
     }
     table.insert(remoteLogs,1,entry)
     if #remoteLogs>maxLogs then table.remove(remoteLogs) end
@@ -1268,10 +1297,18 @@ local function fireRemote(log, args)
         elseif t=="number" or t=="boolean" then table.insert(argParts,tostring(v))
         else table.insert(argParts,string.format("%q",tostring(v))) end
     end
-    local fn,err = loadstring(chain..":FireServer("..table.concat(argParts,", ")..")")
+
+    -- Pilih method betul ikut remote class
+    local fireMethod = "FireServer"
+    if log.remoteClass == "RemoteFunction" then
+        fireMethod = "InvokeServer"
+    elseif log.remoteClass == "UnreliableRemoteEvent" then
+        fireMethod = "FireUnreliableServer"
+    end
+
+    local fn,err = loadstring(chain..":"..fireMethod.."("..table.concat(argParts,", ")..")")
     if not fn then return false,"loadstring: "..tostring(err) end
     local ok,ferr = pcall(fn)
-    -- Log ke rSpy selepas fire (bypass rspyVisible check tak perlu — hook akan catch)
     return ok,ferr
 end
 
@@ -1384,20 +1421,25 @@ local function startHook()
         local result = hookOrig(self,...)
 
         -- Log semua remote tanpa kira sumber
-        if method=="FireServer" or method=="FireUnreliableServer" then
+        if method=="FireServer" then
             local name = self.Name
             local ok,path = pcall(function() return self:GetFullName() end)
             if ok then
-                task.defer(function() pcall(addRspyLog,"C>S",name,path,args) end)
+                local cls = pcall(function() return self.ClassName end) and self.ClassName or "RemoteEvent"
+                task.defer(function() pcall(addRspyLog,"C>S",name,path,args,nil,cls) end)
+            end
+        elseif method=="FireUnreliableServer" then
+            local name = self.Name
+            local ok,path = pcall(function() return self:GetFullName() end)
+            if ok then
+                task.defer(function() pcall(addRspyLog,"C>S",name,path,args,nil,"UnreliableRemoteEvent") end)
             end
         elseif method=="InvokeServer" then
-            -- InvokeServer ada return value dari server
             local name = self.Name
             local ok,path = pcall(function() return self:GetFullName() end)
             if ok then
-                -- Pass result sebagai returnVal
                 local retVal = result
-                task.defer(function() pcall(addRspyLog,"C>S",name,path,args,retVal) end)
+                task.defer(function() pcall(addRspyLog,"C>S",name,path,args,retVal,"RemoteFunction") end)
             end
         end
 
@@ -1406,11 +1448,12 @@ local function startHook()
 
     -- S>C
     local function connectRE(v)
-        if v:IsA("RemoteEvent") then
+        if v:IsA("RemoteEvent") or v:IsA("UnreliableRemoteEvent") then
+            local cls = v.ClassName
             v.OnClientEvent:Connect(function(...)
                 local args={...}; local path=""
                 pcall(function() path=v:GetFullName() end)
-                task.defer(function() pcall(addRspyLog,"S>C",v.Name,path,args) end)
+                task.defer(function() pcall(addRspyLog,"S>C",v.Name,path,args,nil,cls) end)
             end)
         end
     end
