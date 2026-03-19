@@ -10,6 +10,18 @@ local lp      = Players.LocalPlayer
 local pgui    = lp.PlayerGui
 local guiParent = pgui
 
+-- ── cloneref — wrap semua service references ──
+-- Prevent anti-cheat dari detect direct service access
+-- Fallback kalau cloneref tak available
+local _cloneref = cloneref or function(x) return x end
+
+local _Players = _cloneref(Players)
+local _RS      = _cloneref(RS)
+local _UIS     = _cloneref(UIS)
+local _lp      = _cloneref(lp)
+local _pgui    = _cloneref(pgui)
+guiParent      = _pgui
+
 -- Randomize GUI name supaya anti-cheat tak detect by name
 local function randomString(len)
     local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -1615,9 +1627,8 @@ end
 
 -- ================================================
 -- HOOK ALL REMOTES
--- hookmetamethod capture SEMUA sumber:
--- game sendiri, console kita, console lain, IY, script lain.
--- rspyVisible = display control je, hook sentiasa aktif.
+-- hookmetamethod capture SEMUA sumber.
+-- newcclosure wrap — hide dari getconnections scan.
 -- ================================================
 local hookOrig = nil
 
@@ -1626,14 +1637,13 @@ local function startHook()
         addConLog("hookmetamethod tidak tersedia!", C.red,"[err]"); return
     end
 
-    hookOrig = hookmetamethod(game,"__namecall",function(self,...)
+    -- newcclosure buat callback nampak macam native C function
+    -- anti-cheat yang scan getconnections nampak native, bukan Lua script
+    local hookCb = newcclosure and newcclosure(function(self,...)
         local method = getnamecallmethod()
         local args   = {...}
-
-        -- Original call DULU — zero interference
         local result = hookOrig(self,...)
 
-        -- Log semua remote tanpa kira sumber
         if method=="FireServer" then
             local name = self.Name
             local ok,path = pcall(function() return self:GetFullName() end)
@@ -1657,16 +1667,51 @@ local function startHook()
         end
 
         return result
-    end)
+    end) or function(self,...)  -- fallback kalau newcclosure nil
+        local method = getnamecallmethod()
+        local args   = {...}
+        local result = hookOrig(self,...)
 
-    -- S>C
+        if method=="FireServer" then
+            local name = self.Name
+            local ok,path = pcall(function() return self:GetFullName() end)
+            if ok then
+                local cls = pcall(function() return self.ClassName end) and self.ClassName or "RemoteEvent"
+                task.defer(function() pcall(addRspyLog,"C>S",name,path,args,nil,cls) end)
+            end
+        elseif method=="FireUnreliableServer" then
+            local name = self.Name
+            local ok,path = pcall(function() return self:GetFullName() end)
+            if ok then
+                task.defer(function() pcall(addRspyLog,"C>S",name,path,args,nil,"UnreliableRemoteEvent") end)
+            end
+        elseif method=="InvokeServer" then
+            local name = self.Name
+            local ok,path = pcall(function() return self:GetFullName() end)
+            if ok then
+                local retVal = result
+                task.defer(function() pcall(addRspyLog,"C>S",name,path,args,retVal,"RemoteFunction") end)
+            end
+        end
+
+        return result
+    end
+
+    hookOrig = hookmetamethod(game,"__namecall", hookCb)
+
+    -- S>C — guna cloneref pada remote instance
     local function connectRE(v)
         if v:IsA("RemoteEvent") or v:IsA("UnreliableRemoteEvent") then
-            local cls = v.ClassName
-            v.OnClientEvent:Connect(function(...)
+            local cv  = _cloneref(v)
+            local cls = cv.ClassName
+            cv.OnClientEvent:Connect(newcclosure and newcclosure(function(...)
                 local args={...}; local path=""
-                pcall(function() path=v:GetFullName() end)
-                task.defer(function() pcall(addRspyLog,"S>C",v.Name,path,args,nil,cls) end)
+                pcall(function() path=cv:GetFullName() end)
+                task.defer(function() pcall(addRspyLog,"S>C",cv.Name,path,args,nil,cls) end)
+            end) or function(...)
+                local args={...}; local path=""
+                pcall(function() path=cv:GetFullName() end)
+                task.defer(function() pcall(addRspyLog,"S>C",cv.Name,path,args,nil,cls) end)
             end)
         end
     end
