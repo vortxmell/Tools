@@ -1,13 +1,13 @@
 -- ================================================
--- Hub Tools v2.3 — rSpy + Console (Tab System)
--- Gold Theme | Resizeable | Universal
+-- Hub Tools v3.0
+-- rSpy + Console | Gold Theme | Universal
 -- ================================================
 
 local Players = game:GetService("Players")
-local RS = game:GetService("ReplicatedStorage")
-local UIS = game:GetService("UserInputService")
-local lp = Players.LocalPlayer
-local pgui = lp.PlayerGui
+local RS      = game:GetService("ReplicatedStorage")
+local UIS     = game:GetService("UserInputService")
+local lp      = Players.LocalPlayer
+local pgui    = lp.PlayerGui
 
 -- ================================================
 -- CLIPBOARD
@@ -15,7 +15,7 @@ local pgui = lp.PlayerGui
 local function copyClip(text)
     if setclipboard then setclipboard(text)
     elseif toclipboard then toclipboard(text)
-    else _G.lastCopy = text print("[Copy] -> _G.lastCopy") end
+    else _G.lastCopy = text; print("[Copy] -> _G.lastCopy") end
 end
 
 -- ================================================
@@ -23,37 +23,56 @@ end
 -- ================================================
 local remoteLogs     = {}
 local remoteCount    = {}
-local remoteLastFire = {} -- cooldown tracker: path -> last fire tick
-local paused         = true   -- default stopped, kena tekan Play dulu
-local dirFilter      = "both" -- "both", "cs", "sc"
-local rspyAutoScroll = true
-local conAutoScroll  = true
-local maxLogs        = 300
-local selectedLog    = nil
+local remoteLastFire = {}
 local logLines       = {}
+local selectedLog    = nil
 local activeTab      = "console"
 local editorFullsize = false
+local sharedCode     = ""
+
+-- rSpy
+local rspyVisible    = false  -- false = stopped, true = showing logs
+local dirFilter      = "both"
+local rspyAutoScroll = true
+
+-- Console
+local conAutoScroll = true
+local maxLogs       = 300
+
+-- Window
+local minimized   = false
+local resizing    = false
+local resizeStart, sizeStart
+
+-- Keyboard follow
+local kbBaseY  = nil
+local kbActive = false
+
+-- Spam
+local spamActive    = false
+local spamCount     = 0
+local spamPanelOpen = false
 
 -- ================================================
 -- COLORS
 -- ================================================
 local C = {
-    bg         = Color3.fromRGB(18, 13, 4),
-    panel      = Color3.fromRGB(28, 20, 4),
-    panelDark  = Color3.fromRGB(16, 11, 2),
-    gold       = Color3.fromRGB(120, 85, 0),
-    goldBr     = Color3.fromRGB(180, 130, 0),
-    goldText   = Color3.fromRGB(255, 220, 100),
-    tabActive  = Color3.fromRGB(150, 105, 0),
-    tabInactive= Color3.fromRGB(35, 25, 5),
-    green      = Color3.fromRGB(0, 200, 80),
-    red        = Color3.fromRGB(200, 50, 50),
-    blue       = Color3.fromRGB(80, 160, 255),
-    purple     = Color3.fromRGB(180, 80, 255),
-    orange     = Color3.fromRGB(255, 140, 0),
-    white      = Color3.fromRGB(240, 240, 240),
-    dim        = Color3.fromRGB(140, 120, 70),
-    dimDark    = Color3.fromRGB(60, 45, 15),
+    bg         = Color3.fromRGB(18,13,4),
+    panel      = Color3.fromRGB(28,20,4),
+    panelDark  = Color3.fromRGB(16,11,2),
+    gold       = Color3.fromRGB(120,85,0),
+    goldBr     = Color3.fromRGB(180,130,0),
+    goldText   = Color3.fromRGB(255,220,100),
+    tabActive  = Color3.fromRGB(150,105,0),
+    tabInactive= Color3.fromRGB(35,25,5),
+    green      = Color3.fromRGB(0,200,80),
+    red        = Color3.fromRGB(200,50,50),
+    blue       = Color3.fromRGB(80,160,255),
+    purple     = Color3.fromRGB(180,80,255),
+    orange     = Color3.fromRGB(255,140,0),
+    white      = Color3.fromRGB(240,240,240),
+    dim        = Color3.fromRGB(140,120,70),
+    dimDark    = Color3.fromRGB(60,45,15),
 }
 
 -- ================================================
@@ -66,102 +85,99 @@ if ex then ex:Destroy() end
 -- GUI ROOT
 -- ================================================
 local gui = Instance.new("ScreenGui")
-gui.Name = "HubTools"
-gui.ResetOnSpawn = false
-gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
-gui.DisplayOrder = 999
-gui.Parent = pgui
+gui.Name             = "HubTools"
+gui.ResetOnSpawn     = false
+gui.ZIndexBehavior   = Enum.ZIndexBehavior.Global
+gui.DisplayOrder     = 999
+gui.Parent           = pgui
 
 -- ================================================
 -- UI BUILDERS
 -- ================================================
 local function mkFrame(parent, size, pos, color, radius)
     local f = Instance.new("Frame")
-    f.Size = size or UDim2.new(0,100,0,100)
-    f.Position = pos or UDim2.new(0,0,0,0)
+    f.Size             = size  or UDim2.new(0,100,0,100)
+    f.Position         = pos   or UDim2.new(0,0,0,0)
     f.BackgroundColor3 = color or C.panel
-    f.BorderSizePixel = 0
+    f.BorderSizePixel  = 0
     f.ClipsDescendants = false
-    f.Parent = parent
-    if radius then
-        Instance.new("UICorner",f).CornerRadius = UDim.new(0,radius)
-    end
+    f.Parent           = parent
+    if radius then Instance.new("UICorner",f).CornerRadius = UDim.new(0,radius) end
     return f
 end
 
-local function mkLabel(parent,text,size,pos,tc,fs,font,xa)
+local function mkLabel(parent, text, size, pos, tc, fs, font, xa)
     local l = Instance.new("TextLabel")
-    l.Size = size or UDim2.new(1,0,1,0)
-    l.Position = pos or UDim2.new(0,0,0,0)
+    l.Size           = size or UDim2.new(1,0,1,0)
+    l.Position       = pos  or UDim2.new(0,0,0,0)
     l.BackgroundTransparency = 1
-    l.Text = text or ""
-    l.TextColor3 = tc or C.goldText
-    l.TextSize = fs or 12
-    l.Font = font or Enum.Font.Gotham
-    l.TextXAlignment = xa or Enum.TextXAlignment.Left
-    l.TextTruncate = Enum.TextTruncate.AtEnd
-    l.Parent = parent
+    l.Text           = text or ""
+    l.TextColor3     = tc   or C.goldText
+    l.TextSize       = fs   or 12
+    l.Font           = font or Enum.Font.Gotham
+    l.TextXAlignment = xa   or Enum.TextXAlignment.Left
+    l.TextTruncate   = Enum.TextTruncate.AtEnd
+    l.Parent         = parent
     return l
 end
 
-local function mkBtn(parent,text,size,pos,bg,tc,fs)
+local function mkBtn(parent, text, size, pos, bg, tc, fs)
     local b = Instance.new("TextButton")
-    b.Size = size or UDim2.new(0,80,0,28)
-    b.Position = pos or UDim2.new(0,0,0,0)
-    b.BackgroundColor3 = bg or C.gold
-    b.BorderSizePixel = 0
-    b.Text = text or ""
-    b.TextColor3 = tc or C.bg
-    b.TextSize = fs or 12
-    b.Font = Enum.Font.GothamBold
-    b.AutoButtonColor = true
-    b.Parent = parent
+    b.Size             = size or UDim2.new(0,80,0,28)
+    b.Position         = pos  or UDim2.new(0,0,0,0)
+    b.BackgroundColor3 = bg   or C.gold
+    b.BorderSizePixel  = 0
+    b.Text             = text or ""
+    b.TextColor3       = tc   or C.bg
+    b.TextSize         = fs   or 12
+    b.Font             = Enum.Font.GothamBold
+    b.AutoButtonColor  = true
+    b.Parent           = parent
     Instance.new("UICorner",b).CornerRadius = UDim.new(0,5)
     return b
 end
 
-local function mkInput(parent,ph,size,pos)
-    local box = Instance.new("TextBox")
-    box.Size = size or UDim2.new(1,0,0,28)
-    box.Position = pos or UDim2.new(0,0,0,0)
-    box.BackgroundColor3 = C.panelDark
-    box.BorderSizePixel = 0
-    box.Text = ""
-    box.PlaceholderText = ph or ""
-    box.TextColor3 = C.goldText
-    box.PlaceholderColor3 = C.dim
-    box.TextSize = 11
-    box.Font = Enum.Font.Gotham
-    box.TextXAlignment = Enum.TextXAlignment.Left
-    box.ClearTextOnFocus = false
-    box.Parent = parent
-    Instance.new("UICorner",box).CornerRadius = UDim.new(0,5)
-    local p = Instance.new("UIPadding",box)
-    p.PaddingLeft = UDim.new(0,6)
-    return box
+local function mkInput(parent, ph, size, pos)
+    local b = Instance.new("TextBox")
+    b.Size             = size or UDim2.new(1,0,0,28)
+    b.Position         = pos  or UDim2.new(0,0,0,0)
+    b.BackgroundColor3 = C.panelDark
+    b.BorderSizePixel  = 0
+    b.Text             = ""
+    b.PlaceholderText  = ph or ""
+    b.TextColor3       = C.goldText
+    b.PlaceholderColor3= C.dim
+    b.TextSize         = 11
+    b.Font             = Enum.Font.Gotham
+    b.TextXAlignment   = Enum.TextXAlignment.Left
+    b.ClearTextOnFocus = false
+    b.Parent           = parent
+    Instance.new("UICorner",b).CornerRadius = UDim.new(0,5)
+    Instance.new("UIPadding",b).PaddingLeft = UDim.new(0,6)
+    return b
 end
 
-local function mkScroll(parent,size,pos)
+local function mkScroll(parent, size, pos)
     local s = Instance.new("ScrollingFrame")
-    s.Size = size or UDim2.new(1,0,1,0)
-    s.Position = pos or UDim2.new(0,0,0,0)
-    s.BackgroundColor3 = C.panelDark
-    s.BorderSizePixel = 0
-    s.ScrollBarThickness = 4
+    s.Size                 = size or UDim2.new(1,0,1,0)
+    s.Position             = pos  or UDim2.new(0,0,0,0)
+    s.BackgroundColor3     = C.panelDark
+    s.BorderSizePixel      = 0
+    s.ScrollBarThickness   = 4
     s.ScrollBarImageColor3 = C.gold
-    s.CanvasSize = UDim2.new(0,0,0,0)
-    s.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    s.Parent = parent
+    s.CanvasSize           = UDim2.new(0,0,0,0)
+    s.AutomaticCanvasSize  = Enum.AutomaticSize.Y
+    s.Parent               = parent
     Instance.new("UICorner",s).CornerRadius = UDim.new(0,5)
     local l = Instance.new("UIListLayout",s)
     l.SortOrder = Enum.SortOrder.LayoutOrder
-    l.Padding = UDim.new(0,1)
+    l.Padding   = UDim.new(0,1)
     return s
 end
 
-local function mkStroke(parent,color,thick)
+local function mkStroke(parent, color, thick)
     local s = Instance.new("UIStroke",parent)
-    s.Color = color or C.gold
+    s.Color     = color or C.gold
     s.Thickness = thick or 1
     return s
 end
@@ -171,47 +187,41 @@ end
 -- ================================================
 local WIN_W, WIN_H = 560, 380
 local MIN_W, MIN_H = 320, 260
-local TITLE_H = 23
-local TAB_H   = 26
-local HEADER_H = TITLE_H + TAB_H  -- 49
+local TITLE_H      = 23
+local TAB_H        = 26
+local HEADER_H     = TITLE_H + TAB_H  -- 49
 
 local mainWin = mkFrame(gui,
     UDim2.new(0,WIN_W,0,WIN_H),
-    UDim2.new(0.5,-WIN_W/2,0.5,-WIN_H/2),
+    UDim2.new(0.5,-WIN_W/2, 0.5,-WIN_H/2),
     C.bg, 10)
-mainWin.Active = true
-mainWin.Draggable = true
+mainWin.Active           = true
+mainWin.Draggable        = true
 mainWin.ClipsDescendants = true
 mkStroke(mainWin, C.gold, 1.5)
 
 -- ================================================
--- KEYBOARD FOLLOW (Camera ViewportSize)
+-- KEYBOARD FOLLOW
 -- ================================================
-local kbBaseY  = nil
-local kbActive = false
-local cam      = workspace.CurrentCamera
-local lastVpH  = cam.ViewportSize.Y
+local cam     = workspace.CurrentCamera
+local lastVpH = cam.ViewportSize.Y
 
 cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
     local newH = cam.ViewportSize.Y
     local diff = lastVpH - newH
-
     if diff > 100 and not kbActive then
         kbActive = true
-        local absX = mainWin.AbsolutePosition.X
-        local absY = mainWin.AbsolutePosition.Y
-        kbBaseY = absY
-        local newY = math.max(5, absY - diff)
-        mainWin.Position = UDim2.new(0, absX, 0, newY)
+        local ax = mainWin.AbsolutePosition.X
+        local ay = mainWin.AbsolutePosition.Y
+        kbBaseY  = ay
+        mainWin.Position = UDim2.new(0, ax, 0, math.max(5, ay - diff))
     elseif diff < -100 and kbActive then
         kbActive = false
         if kbBaseY then
-            local absX = mainWin.AbsolutePosition.X
-            mainWin.Position = UDim2.new(0, absX, 0, kbBaseY)
+            mainWin.Position = UDim2.new(0, mainWin.AbsolutePosition.X, 0, kbBaseY)
             kbBaseY = nil
         end
     end
-
     lastVpH = newH
 end)
 
@@ -219,117 +229,80 @@ end)
 -- TITLE BAR
 -- ================================================
 local titleBar = mkFrame(mainWin,
-    UDim2.new(1,0,0,TITLE_H),
-    UDim2.new(0,0,0,0),
-    C.gold, 8)
+    UDim2.new(1,0,0,TITLE_H), UDim2.new(0,0,0,0), C.gold, 8)
 
 mkLabel(titleBar, "🔧  Hub Tools",
-    UDim2.new(1,0,1,0),
-    UDim2.new(0,0,0,0),
+    UDim2.new(1,0,1,0), UDim2.new(0,0,0,0),
     C.bg, 12, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
 
-local minBtn = mkBtn(titleBar, "—",
-    UDim2.new(0,22,0,18),
-    UDim2.new(1,-46,0,4),
-    C.dimDark, C.goldText, 12)
-
+local minBtn   = mkBtn(titleBar, "—",
+    UDim2.new(0,22,0,18), UDim2.new(1,-46,0,4), C.dimDark, C.goldText, 12)
 local closeBtn = mkBtn(titleBar, "✕",
-    UDim2.new(0,22,0,18),
-    UDim2.new(1,-23,0,4),
-    C.red, C.white, 11)
+    UDim2.new(0,22,0,18), UDim2.new(1,-23,0,4), C.red, C.white, 11)
 
 -- ================================================
 -- TAB BAR
 -- ================================================
-local tabBar = mkFrame(mainWin,
-    UDim2.new(1,0,0,TAB_H),
-    UDim2.new(0,0,0,TITLE_H),
-    C.panelDark, 0)
-
-local tabs = {}
+local tabBar      = mkFrame(mainWin,
+    UDim2.new(1,0,0,TAB_H), UDim2.new(0,0,0,TITLE_H), C.panelDark, 0)
+local tabs        = {}
 local tabContents = {}
 
 local function setTab(name)
     activeTab = name
-    for tname,btn in pairs(tabs) do
-        btn.BackgroundColor3 = tname==name and C.tabActive or C.tabInactive
-        btn.TextColor3 = tname==name and C.goldText or C.dim
-    end
-    for tname,content in pairs(tabContents) do
-        content.Visible = tname==name
-    end
+    for k,b in pairs(tabs)        do b.BackgroundColor3 = k==name and C.tabActive or C.tabInactive; b.TextColor3 = k==name and C.goldText or C.dim end
+    for k,c in pairs(tabContents) do c.Visible = k==name end
 end
 
-local conTab = mkBtn(tabBar, "🖥 Console",
-    UDim2.new(0,58,1,-4), UDim2.new(0,4,0,2),
-    C.tabInactive, C.dim, 10)
+local conTab  = mkBtn(tabBar,"🖥 Console",UDim2.new(0,58,1,-4),UDim2.new(0,4,0,2), C.tabInactive,C.dim,10)
+local rspyTab = mkBtn(tabBar,"⚡ rSpy",   UDim2.new(0,52,1,-4),UDim2.new(0,66,0,2),C.tabInactive,C.dim,10)
 
-local rspyTab = mkBtn(tabBar, "⚡ rSpy",
-    UDim2.new(0,52,1,-4), UDim2.new(0,66,0,2),
-    C.tabInactive, C.dim, 10)
-
--- Content frames
 local conContent = mkFrame(mainWin,
-    UDim2.new(1,0,1,-HEADER_H),
-    UDim2.new(0,0,0,HEADER_H),
-    C.bg, 0)
+    UDim2.new(1,0,1,-HEADER_H), UDim2.new(0,0,0,HEADER_H), C.bg, 0)
 conContent.ClipsDescendants = true
-conContent.Visible = false
+conContent.Visible          = false
 
 local rspyContent = mkFrame(mainWin,
-    UDim2.new(1,0,1,-HEADER_H),
-    UDim2.new(0,0,0,HEADER_H),
-    C.bg, 0)
+    UDim2.new(1,0,1,-HEADER_H), UDim2.new(0,0,0,HEADER_H), C.bg, 0)
 rspyContent.ClipsDescendants = true
-rspyContent.Visible = false
+rspyContent.Visible          = false
 
 tabs["console"]        = conTab
 tabs["rspy"]           = rspyTab
 tabContents["console"] = conContent
 tabContents["rspy"]    = rspyContent
 
-conTab.MouseButton1Click:Connect(function() setTab("console") end)
-rspyTab.MouseButton1Click:Connect(function() setTab("rspy") end)
+conTab.MouseButton1Click:Connect(function()  setTab("console") end)
+rspyTab.MouseButton1Click:Connect(function() setTab("rspy")    end)
 
 -- ================================================
 -- RESIZE HANDLE
 -- ================================================
 local resizeHandle = mkFrame(mainWin,
-    UDim2.new(0,16,0,16),
-    UDim2.new(1,-16,1,-16),
-    C.goldBr, 3)
+    UDim2.new(0,16,0,16), UDim2.new(1,-16,1,-16), C.goldBr, 3)
 resizeHandle.ZIndex = 10
-mkLabel(resizeHandle, "⤡",
-    UDim2.new(1,0,1,0), nil,
-    C.bg, 11, Enum.Font.GothamBold,
-    Enum.TextXAlignment.Center)
+mkLabel(resizeHandle, "⤡", UDim2.new(1,0,1,0), nil,
+    C.bg, 11, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
 
-local resizing = false
-local resizeStart, sizeStart
-
-resizeHandle.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.Touch
-    or input.UserInputType == Enum.UserInputType.MouseButton1 then
+resizeHandle.InputBegan:Connect(function(i)
+    if i.UserInputType==Enum.UserInputType.Touch
+    or i.UserInputType==Enum.UserInputType.MouseButton1 then
         resizing    = true
-        resizeStart = Vector2.new(input.Position.X, input.Position.Y)
+        resizeStart = Vector2.new(i.Position.X, i.Position.Y)
         sizeStart   = Vector2.new(mainWin.AbsoluteSize.X, mainWin.AbsoluteSize.Y)
     end
 end)
-
-UIS.InputChanged:Connect(function(input)
+UIS.InputChanged:Connect(function(i)
     if not resizing then return end
-    if input.UserInputType == Enum.UserInputType.Touch
-    or input.UserInputType == Enum.UserInputType.MouseMovement then
-        local delta = Vector2.new(input.Position.X, input.Position.Y) - resizeStart
-        mainWin.Size = UDim2.new(0,
-            math.max(MIN_W, sizeStart.X+delta.X), 0,
-            math.max(MIN_H, sizeStart.Y+delta.Y))
+    if i.UserInputType==Enum.UserInputType.Touch
+    or i.UserInputType==Enum.UserInputType.MouseMovement then
+        local d = Vector2.new(i.Position.X,i.Position.Y) - resizeStart
+        mainWin.Size = UDim2.new(0, math.max(MIN_W,sizeStart.X+d.X), 0, math.max(MIN_H,sizeStart.Y+d.Y))
     end
 end)
-
-UIS.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.Touch
-    or input.UserInputType == Enum.UserInputType.MouseButton1 then
+UIS.InputEnded:Connect(function(i)
+    if i.UserInputType==Enum.UserInputType.Touch
+    or i.UserInputType==Enum.UserInputType.MouseButton1 then
         resizing = false
     end
 end)
@@ -337,318 +310,196 @@ end)
 -- ================================================
 -- MINIMIZE / CLOSE
 -- ================================================
-local minimized = false
-
 minBtn.MouseButton1Click:Connect(function()
     minimized = not minimized
-    tabBar.Visible = not minimized
-    for tname,c in pairs(tabContents) do
-        c.Visible = not minimized and (tname==activeTab)
-    end
+    tabBar.Visible       = not minimized
     resizeHandle.Visible = not minimized
+    for k,c in pairs(tabContents) do c.Visible = not minimized and k==activeTab end
     if minimized then
-        mainWin.Size = UDim2.new(0, mainWin.AbsoluteSize.X, 0, TITLE_H)
-        minBtn.Text = "□"
+        mainWin.Size = UDim2.new(0,mainWin.AbsoluteSize.X,0,TITLE_H)
+        minBtn.Text  = "□"
     else
-        mainWin.Size = UDim2.new(0,
-            math.max(WIN_W, mainWin.AbsoluteSize.X), 0, WIN_H)
-        minBtn.Text = "—"
+        mainWin.Size = UDim2.new(0,math.max(WIN_W,mainWin.AbsoluteSize.X),0,WIN_H)
+        minBtn.Text  = "—"
         setTab(activeTab)
     end
 end)
 
-closeBtn.MouseButton1Click:Connect(function()
-    -- Pastikan rSpy paused dulu sebelum destroy
-    -- supaya hook callback tak buat apa-apa lepas GUI gone
-    paused = true
-    gui:Destroy()
-end)
+closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
 
 -- ================================================
 -- ===== CONSOLE TAB =====
 -- ================================================
-local sharedCode = ""
 
+-- Exec bar
 local execBar = mkFrame(conContent,
-    UDim2.new(1,-16,0,34),
-    UDim2.new(0,8,0,6),
-    C.panelDark, 5)
+    UDim2.new(1,-16,0,34), UDim2.new(0,8,0,6), C.panelDark, 5)
 
-local codeInput = mkInput(execBar,
-    "▶ Execute Lua...",
-    UDim2.new(1,-102,1,-4),
-    UDim2.new(0,2,0,2))
+local codeInput   = mkInput(execBar,"▶ Execute Lua...",UDim2.new(1,-102,1,-4),UDim2.new(0,2,0,2))
 codeInput.MultiLine = false
+local fullsizeBtn = mkBtn(execBar,"⛶ Full",UDim2.new(0,46,1,-4),UDim2.new(1,-100,0,2),C.dimDark,C.goldText,11)
+local runBtn      = mkBtn(execBar,"▶ Run", UDim2.new(0,48,1,-4),UDim2.new(1,-50,0,2), C.green,C.bg,12)
 
-local fullsizeBtn = mkBtn(execBar, "⛶ Full",
-    UDim2.new(0,46,1,-4),
-    UDim2.new(1,-100,0,2),
-    C.dimDark, C.goldText, 11)
-
-local runBtn = mkBtn(execBar, "▶ Run",
-    UDim2.new(0,48,1,-4),
-    UDim2.new(1,-50,0,2),
-    C.green, C.bg, 12)
-
+-- Normal log panel
 local normalPanel = mkFrame(conContent,
-    UDim2.new(1,0,1,-44),
-    UDim2.new(0,0,0,44),
-    C.bg, 0)
-normalPanel.ClipsDescendants = false
+    UDim2.new(1,0,1,-44), UDim2.new(0,0,0,44), C.bg, 0)
 
-local conToolbar = mkFrame(normalPanel,
-    UDim2.new(1,-16,0,26),
-    UDim2.new(0,8,0,4),
-    C.panelDark, 5)
+local conToolbar  = mkFrame(normalPanel,
+    UDim2.new(1,-16,0,26), UDim2.new(0,8,0,4), C.panelDark, 5)
 
-local clearConBtn = mkBtn(conToolbar, "🗑 Clear",
-    UDim2.new(0,62,1,-4), UDim2.new(0,2,0,2),
-    C.red, C.white, 11)
-local copyAllBtn = mkBtn(conToolbar, "📋 Copy All",
-    UDim2.new(0,80,1,-4), UDim2.new(0,68,0,2),
-    C.gold, C.bg, 11)
-local asConBtn = mkBtn(conToolbar, "↓ Auto",
-    UDim2.new(0,58,1,-4), UDim2.new(0,152,0,2),
-    C.goldBr, C.bg, 11)
-local conCount = mkLabel(conToolbar, "0 lines",
-    UDim2.new(0,80,1,0), UDim2.new(0,216,0,0),
-    C.white, 11)
+local clearConBtn = mkBtn(conToolbar,"🗑 Clear",    UDim2.new(0,62,1,-4),UDim2.new(0,2,0,2),  C.red,C.white,11)
+local copyAllBtn  = mkBtn(conToolbar,"📋 Copy All", UDim2.new(0,80,1,-4),UDim2.new(0,68,0,2), C.gold,C.bg,11)
+local asConBtn    = mkBtn(conToolbar,"↓ Auto",      UDim2.new(0,58,1,-4),UDim2.new(0,152,0,2),C.goldBr,C.bg,11)
+local conCount    = mkLabel(conToolbar,"0 lines",   UDim2.new(0,80,1,0), UDim2.new(0,216,0,0),C.white,11)
 
-local conSearch = mkInput(normalPanel,
-    "🔍 Filter logs...",
-    UDim2.new(1,-16,0,24),
-    UDim2.new(0,8,0,34))
-
-local conScroll = mkScroll(normalPanel,
-    UDim2.new(1,-16,1,-62),
-    UDim2.new(0,8,0,62))
+local conSearch = mkInput(normalPanel,"🔍 Filter logs...",UDim2.new(1,-16,0,24),UDim2.new(0,8,0,34))
+local conScroll = mkScroll(normalPanel,UDim2.new(1,-16,1,-62),UDim2.new(0,8,0,62))
 mkStroke(conScroll, C.gold)
 
--- ================================================
--- FULLSIZE EDITOR PANEL
--- ================================================
+-- Fullsize editor
 local fullPanel = mkFrame(conContent,
-    UDim2.new(1,0,1,-44),
-    UDim2.new(0,0,0,44),
-    C.bg, 0)
+    UDim2.new(1,0,1,-44), UDim2.new(0,0,0,44), C.bg, 0)
 fullPanel.ClipsDescendants = true
-fullPanel.Visible = false
+fullPanel.Visible          = false
 
 local editorFrame = mkFrame(fullPanel,
-    UDim2.new(1,-16,1,-34),
-    UDim2.new(0,8,0,4),
-    C.panelDark, 6)
+    UDim2.new(1,-16,1,-34), UDim2.new(0,8,0,4), C.panelDark, 6)
 mkStroke(editorFrame, C.goldBr, 1.5)
 
 local fullCodeBox = Instance.new("TextBox")
-fullCodeBox.Size = UDim2.new(1,-8,1,-8)
-fullCodeBox.Position = UDim2.new(0,4,0,4)
+fullCodeBox.Size              = UDim2.new(1,-8,1,-8)
+fullCodeBox.Position          = UDim2.new(0,4,0,4)
 fullCodeBox.BackgroundTransparency = 1
-fullCodeBox.Text = ""
-fullCodeBox.PlaceholderText = "-- Write Lua here..."
-fullCodeBox.TextColor3 = C.goldText
+fullCodeBox.Text              = ""
+fullCodeBox.PlaceholderText   = "-- Write Lua here..."
+fullCodeBox.TextColor3        = C.goldText
 fullCodeBox.PlaceholderColor3 = C.dim
-fullCodeBox.TextSize = 12
-fullCodeBox.Font = Enum.Font.Code
-fullCodeBox.TextXAlignment = Enum.TextXAlignment.Left
-fullCodeBox.TextYAlignment = Enum.TextYAlignment.Top
-fullCodeBox.MultiLine = true
-fullCodeBox.ClearTextOnFocus = false
-fullCodeBox.TextWrapped = false
-fullCodeBox.Parent = editorFrame
+fullCodeBox.TextSize          = 12
+fullCodeBox.Font               = Enum.Font.Code
+fullCodeBox.TextXAlignment    = Enum.TextXAlignment.Left
+fullCodeBox.TextYAlignment    = Enum.TextYAlignment.Top
+fullCodeBox.MultiLine         = true
+fullCodeBox.ClearTextOnFocus  = false
+fullCodeBox.TextWrapped       = false
+fullCodeBox.Parent            = editorFrame
+local edPad = Instance.new("UIPadding",fullCodeBox)
+edPad.PaddingLeft = UDim.new(0,4); edPad.PaddingTop = UDim.new(0,4); edPad.PaddingBottom = UDim.new(0,4)
 
-local edPad = Instance.new("UIPadding", fullCodeBox)
-edPad.PaddingLeft = UDim.new(0,4)
-edPad.PaddingTop = UDim.new(0,4)
-edPad.PaddingBottom = UDim.new(0,4)
-
-local clearEditorBtn = mkBtn(fullPanel, "🗑 Clear",
-    UDim2.new(0,70,0,26),
-    UDim2.new(0,8,1,-30),
-    C.red, C.white, 11)
+local clearEditorBtn = mkBtn(fullPanel,"🗑 Clear",
+    UDim2.new(0,70,0,26),UDim2.new(0,8,1,-30),C.red,C.white,11)
 clearEditorBtn.ZIndex = 5
 
--- ================================================
--- SYNC LOGIC
--- ================================================
+-- Sync
 local function syncToBar()
-    local firstLine = sharedCode:match("([^\n]*)")
-    codeInput.Text = firstLine or sharedCode
-end
-
-local function syncToFull()
-    fullCodeBox.Text = sharedCode
+    codeInput.Text = sharedCode:match("([^\n]*)") or sharedCode
 end
 
 codeInput:GetPropertyChangedSignal("Text"):Connect(function()
-    if editorFullsize then return end
-    sharedCode = codeInput.Text
+    if not editorFullsize then sharedCode = codeInput.Text end
 end)
-
 fullCodeBox:GetPropertyChangedSignal("Text"):Connect(function()
-    if not editorFullsize then return end
-    sharedCode = fullCodeBox.Text
-    syncToBar()
+    if editorFullsize then sharedCode = fullCodeBox.Text; syncToBar() end
 end)
-
 clearEditorBtn.MouseButton1Click:Connect(function()
-    sharedCode = ""
-    fullCodeBox.Text = ""
-    codeInput.Text = ""
+    sharedCode = ""; fullCodeBox.Text = ""; codeInput.Text = ""
 end)
 
--- ================================================
--- TOGGLE FULLSIZE
--- ================================================
+-- Toggle fullsize
 local function toggleFullsize()
     editorFullsize = not editorFullsize
-
     if editorFullsize then
-        fullsizeBtn.Text = "⊡ Exit"
-        fullsizeBtn.BackgroundColor3 = C.goldBr
-        fullsizeBtn.TextColor3 = C.bg
+        fullsizeBtn.Text = "⊡ Exit"; fullsizeBtn.BackgroundColor3 = C.goldBr; fullsizeBtn.TextColor3 = C.bg
         fullCodeBox.Text = sharedCode
-        normalPanel.Visible = false
-        fullPanel.Visible = true
-        task.defer(function()
-            fullCodeBox:CaptureFocus()
-        end)
+        normalPanel.Visible = false; fullPanel.Visible = true
+        task.defer(function() fullCodeBox:CaptureFocus() end)
     else
-        fullsizeBtn.Text = "⛶ Full"
-        fullsizeBtn.BackgroundColor3 = C.dimDark
-        fullsizeBtn.TextColor3 = C.goldText
-        sharedCode = fullCodeBox.Text
-        syncToBar()
-        fullPanel.Visible = false
-        normalPanel.Visible = true
+        fullsizeBtn.Text = "⛶ Full"; fullsizeBtn.BackgroundColor3 = C.dimDark; fullsizeBtn.TextColor3 = C.goldText
+        sharedCode = fullCodeBox.Text; syncToBar()
+        fullPanel.Visible = false; normalPanel.Visible = true
     end
 end
-
 fullsizeBtn.MouseButton1Click:Connect(toggleFullsize)
 
--- ================================================
--- CONSOLE LOG BUILDER
--- ================================================
+-- Console log builder
 local function addConLog(text, color, prefix)
-    color  = color or C.white
+    color  = color  or C.white
     prefix = prefix or ""
     local line = {text=text, color=color, prefix=prefix, time=os.date("%M:%S")}
     table.insert(logLines, line)
-    if #logLines > maxLogs then table.remove(logLines, 1) end
+    if #logLines > maxLogs then table.remove(logLines,1) end
 
-    local filter = conSearch.Text:lower()
-    local vis = filter=="" or text:lower():find(filter,1,true)~=nil
-
-    local row = mkFrame(conScroll,
-        UDim2.new(1,-4,0,20), nil, C.bg)
+    local f   = conSearch.Text:lower()
+    local row = mkFrame(conScroll,UDim2.new(1,-4,0,20),nil,C.bg)
     row.BackgroundTransparency = 1
     row.LayoutOrder = #logLines
-    row.Visible = vis
+    row.Visible     = f=="" or text:lower():find(f,1,true)~=nil
 
-    mkLabel(row, line.time,
-        UDim2.new(0,36,1,0), UDim2.new(0,2,0,0),
-        C.dimDark, 9)
-
-    if prefix ~= "" then
-        mkLabel(row, prefix,
-            UDim2.new(0,44,1,0), UDim2.new(0,40,0,0),
-            color, 10, Enum.Font.GothamBold)
+    mkLabel(row, line.time, UDim2.new(0,36,1,0), UDim2.new(0,2,0,0), C.dimDark, 9)
+    if prefix~="" then
+        mkLabel(row, prefix, UDim2.new(0,44,1,0), UDim2.new(0,40,0,0), color, 10, Enum.Font.GothamBold)
     end
-
     local tx = mkLabel(row, text,
-        UDim2.new(1,-120,1,0),
-        UDim2.new(0, prefix~="" and 88 or 44, 0, 0),
+        UDim2.new(1,-120,1,0), UDim2.new(0, prefix~="" and 88 or 44, 0, 0),
         color, 11, Enum.Font.Code)
-    tx.TextWrapped = false
-    tx.TextTruncate = Enum.TextTruncate.AtEnd
+    tx.TextWrapped = false; tx.TextTruncate = Enum.TextTruncate.AtEnd
 
-    local cp = mkBtn(row, "⎘",
-        UDim2.new(0,22,0,16), UDim2.new(1,-24,0,2),
-        C.dimDark, C.goldText, 10)
+    local cp = mkBtn(row,"⎘",UDim2.new(0,22,0,16),UDim2.new(1,-24,0,2),C.dimDark,C.goldText,10)
     cp.MouseButton1Click:Connect(function()
         copyClip(line.time.." "..prefix.." "..text)
-        cp.Text = "✓"
-        task.delay(1, function() cp.Text = "⎘" end)
+        cp.Text = "✓"; task.delay(1, function() cp.Text = "⎘" end)
     end)
 
     conCount.Text = #logLines.." lines"
-
     if conAutoScroll then
-        task.defer(function()
-            conScroll.CanvasPosition = Vector2.new(0, math.huge)
-        end)
+        task.defer(function() conScroll.CanvasPosition = Vector2.new(0,math.huge) end)
     end
 end
 
--- ================================================
--- EXECUTE
--- ================================================
+-- Execute
 local function executeCode(code)
-    if code == "" then return end
+    if code=="" then return end
     local preview = code:match("([^\n]*)") or ""
-    addConLog("> "..(#preview>55 and preview:sub(1,55).."..." or preview),
-        C.goldText, "[exec]")
-
+    addConLog("> "..(#preview>55 and preview:sub(1,55).."..." or preview), C.goldText,"[exec]")
     local fn, err = loadstring(code)
     if fn then
         local ok, res = pcall(fn)
-        if ok then
-            addConLog(res~=nil and tostring(res) or "Done.", C.green, "[ok]")
-        else
-            addConLog(tostring(res), C.red, "[err]")
-        end
+        addConLog(ok and (res~=nil and tostring(res) or "Done.") or tostring(res),
+            ok and C.green or C.red, ok and "[ok]" or "[err]")
     else
-        addConLog(tostring(err), C.red, "[err]")
+        addConLog(tostring(err), C.red,"[err]")
     end
-
     if editorFullsize then toggleFullsize() end
 end
 
-runBtn.MouseButton1Click:Connect(function()
-    executeCode(sharedCode)
-end)
-
+runBtn.MouseButton1Click:Connect(function() executeCode(sharedCode) end)
 codeInput.FocusLost:Connect(function(enter)
-    if enter and not editorFullsize then
-        executeCode(sharedCode)
-    end
+    if enter and not editorFullsize then executeCode(sharedCode) end
 end)
 
--- ================================================
--- CONSOLE CONTROLS
--- ================================================
+-- Console controls
 clearConBtn.MouseButton1Click:Connect(function()
     logLines = {}
-    for _,c in pairs(conScroll:GetChildren()) do
-        if c:IsA("Frame") then c:Destroy() end
-    end
+    for _,c in pairs(conScroll:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
     conCount.Text = "0 lines"
 end)
-
 copyAllBtn.MouseButton1Click:Connect(function()
-    local lines = {}
-    for _,l in ipairs(logLines) do
-        table.insert(lines, l.time.." "..l.prefix.." "..l.text)
-    end
-    copyClip(table.concat(lines,"\n"))
-    copyAllBtn.Text = "✓ Copied!"
-    task.delay(1.5, function() copyAllBtn.Text = "📋 Copy All" end)
+    local out={}
+    for _,l in ipairs(logLines) do table.insert(out,l.time.." "..l.prefix.." "..l.text) end
+    copyClip(table.concat(out,"\n"))
+    copyAllBtn.Text = "✓ Copied!"; task.delay(1.5, function() copyAllBtn.Text = "📋 Copy All" end)
 end)
-
 asConBtn.MouseButton1Click:Connect(function()
     conAutoScroll = not conAutoScroll
     asConBtn.BackgroundColor3 = conAutoScroll and C.goldBr or C.dimDark
-    asConBtn.TextColor3 = conAutoScroll and C.bg or C.goldText
+    asConBtn.TextColor3       = conAutoScroll and C.bg     or C.goldText
 end)
-
 conSearch:GetPropertyChangedSignal("Text"):Connect(function()
     local f = conSearch.Text:lower()
     for _,row in pairs(conScroll:GetChildren()) do
         if row:IsA("Frame") then
             for _,child in pairs(row:GetChildren()) do
                 if child:IsA("TextLabel") and child.Font==Enum.Font.Code then
-                    row.Visible = f=="" or child.Text:lower():find(f,1,true)~=nil
-                    break
+                    row.Visible = f=="" or child.Text:lower():find(f,1,true)~=nil; break
                 end
             end
         end
@@ -657,409 +508,297 @@ end)
 
 -- ================================================
 -- ===== rSPY TAB =====
--- Layout: Toolbar | [Left: Log List] [Right: Detail]
 -- ================================================
 
--- TOOLBAR
+-- Toolbar
 local rspyToolbar = mkFrame(rspyContent,
-    UDim2.new(1,-16,0,26),
-    UDim2.new(0,8,0,6),
-    C.panelDark, 5)
+    UDim2.new(1,-16,0,26), UDim2.new(0,8,0,6), C.panelDark, 5)
 
-local pauseBtn = mkBtn(rspyToolbar, "▶ Play",
-    UDim2.new(0,58,1,-4), UDim2.new(0,2,0,2),
-    C.green, C.bg, 11)
-local clearRspyBtn = mkBtn(rspyToolbar, "🗑 Clear",
-    UDim2.new(0,50,1,-4), UDim2.new(0,64,0,2),
-    C.red, C.white, 11)
-local asRspyBtn = mkBtn(rspyToolbar, "↓ Auto",
-    UDim2.new(0,46,1,-4), UDim2.new(0,118,0,2),
-    C.goldBr, C.bg, 11)
+local pauseBtn     = mkBtn(rspyToolbar,"▶ Play", UDim2.new(0,58,1,-4),UDim2.new(0,2,0,2),  C.green,C.bg,11)
+local clearRspyBtn = mkBtn(rspyToolbar,"🗑 Clear",UDim2.new(0,50,1,-4),UDim2.new(0,64,0,2), C.red,C.white,11)
+local asRspyBtn    = mkBtn(rspyToolbar,"↓ Auto", UDim2.new(0,46,1,-4),UDim2.new(0,118,0,2),C.goldBr,C.bg,11)
+local dirBothBtn   = mkBtn(rspyToolbar,"Both",   UDim2.new(0,38,1,-4),UDim2.new(0,168,0,2),C.goldBr,C.bg,10)
+local dirCSBtn     = mkBtn(rspyToolbar,"C>S",    UDim2.new(0,34,1,-4),UDim2.new(0,210,0,2),C.tabInactive,C.orange,10)
+local dirSCBtn     = mkBtn(rspyToolbar,"S>C",    UDim2.new(0,34,1,-4),UDim2.new(0,248,0,2),C.tabInactive,C.blue,10)
+local rspyCount    = mkLabel(rspyToolbar,"0 events",UDim2.new(0,80,1,0),UDim2.new(0,286,0,0),C.white,10)
 
--- Direction filter
-local dirBothBtn = mkBtn(rspyToolbar, "Both",
-    UDim2.new(0,38,1,-4), UDim2.new(0,168,0,2),
-    C.goldBr, C.bg, 10)
-local dirCSBtn = mkBtn(rspyToolbar, "C>S",
-    UDim2.new(0,34,1,-4), UDim2.new(0,210,0,2),
-    C.tabInactive, C.orange, 10)
-local dirSCBtn = mkBtn(rspyToolbar, "S>C",
-    UDim2.new(0,34,1,-4), UDim2.new(0,248,0,2),
-    C.tabInactive, C.blue, 10)
+local rspyStatus = mkLabel(rspyContent,"⏹ Stopped",
+    UDim2.new(1,-16,0,16),UDim2.new(0,8,0,36),C.red,11)
+local rspySearch = mkInput(rspyContent,"🔍 Filter remote name...",
+    UDim2.new(1,-16,0,24),UDim2.new(0,8,0,56))
 
-local rspyCount = mkLabel(rspyToolbar, "0 events",
-    UDim2.new(0,80,1,0), UDim2.new(0,286,0,0),
-    C.white, 10)
+-- Split panel constants
+local SPLIT_TOP = 84
+local SPLIT_BOT = 30
+local GAP       = 4
 
--- STATUS + SEARCH
-local rspyStatus = mkLabel(rspyContent, "⏹ Stopped",
-    UDim2.new(1,-16,0,16),
-    UDim2.new(0,8,0,36),
-    C.red, 11)
-
-local rspySearch = mkInput(rspyContent,
-    "🔍 Filter remote name...",
-    UDim2.new(1,-16,0,24),
-    UDim2.new(0,8,0,56))
-
--- ================================================
--- SPLIT PANEL — Left (50%) + Right (50%)
--- ================================================
-local SPLIT_TOP  = 84
-local SPLIT_BOT  = 30
-local GAP        = 4
-
--- LEFT PANEL
+-- Left panel — log list
 local leftPanel = mkFrame(rspyContent,
     UDim2.new(0.5,-8-GAP,1,-SPLIT_TOP-SPLIT_BOT),
-    UDim2.new(0,8,0,SPLIT_TOP),
-    C.panelDark, 5)
+    UDim2.new(0,8,0,SPLIT_TOP), C.panelDark, 5)
 mkStroke(leftPanel, C.gold)
 
-local rspyScroll = mkScroll(leftPanel,
-    UDim2.new(1,0,1,0),
-    UDim2.new(0,0,0,0))
+local rspyScroll = mkScroll(leftPanel, UDim2.new(1,0,1,0), UDim2.new(0,0,0,0))
 
--- LEFT bottom bar
 local leftBottomBar = mkFrame(rspyContent,
     UDim2.new(0.5,-8-GAP,0,SPLIT_BOT-4),
-    UDim2.new(0,8,1,-SPLIT_BOT),
-    C.panelDark, 5)
+    UDim2.new(0,8,1,-SPLIT_BOT), C.panelDark, 5)
+local copyHexBtn = mkBtn(leftBottomBar,"📋 Hex",      UDim2.new(0,58,1,-4), UDim2.new(0,2,0,2),  C.gold,C.bg,11)
+local exportBtn  = mkBtn(leftBottomBar,"📤 Export All",UDim2.new(1,-114,1,-4),UDim2.new(0,64,0,2),C.goldBr,C.bg,11)
 
-local copyHexBtn = mkBtn(leftBottomBar, "📋 Hex",
-    UDim2.new(0,58,1,-4), UDim2.new(0,2,0,2),
-    C.gold, C.bg, 11)
-local exportBtn = mkBtn(leftBottomBar, "📤 Export All",
-    UDim2.new(1,-114,1,-4), UDim2.new(0,64,0,2),
-    C.goldBr, C.bg, 11)
-
--- RIGHT PANEL — smart detail + replay/spam
+-- Right panel — detail + replay/spam
 local rightPanel = mkFrame(rspyContent,
     UDim2.new(0.5,-8,1,-SPLIT_TOP-SPLIT_BOT),
-    UDim2.new(0.5,GAP,0,SPLIT_TOP),
-    C.panelDark, 5)
+    UDim2.new(0.5,GAP,0,SPLIT_TOP), C.panelDark, 5)
 mkStroke(rightPanel, C.goldBr)
 rightPanel.ClipsDescendants = false
 
--- Section 1: Info (atas) — 22% height
+-- Info section
 local infoPanel = mkFrame(rightPanel,
-    UDim2.new(1,-8,0.22,-4),
-    UDim2.new(0,4,0,4),
-    C.bg, 4)
+    UDim2.new(1,-8,0.22,-4), UDim2.new(0,4,0,4), C.bg, 4)
 mkStroke(infoPanel, C.gold, 1)
 
-local detailLabel = mkLabel(infoPanel,
-    "[ Tap log untuk detail ]",
-    UDim2.new(1,-8,1,-8),
-    UDim2.new(0,4,0,4),
-    C.white, 9, Enum.Font.Code)
-detailLabel.TextTruncate = Enum.TextTruncate.None
-detailLabel.TextWrapped = true
+local detailLabel = mkLabel(infoPanel,"[ Tap log untuk detail ]",
+    UDim2.new(1,-8,1,-8), UDim2.new(0,4,0,4), C.white, 9, Enum.Font.Code)
+detailLabel.TextTruncate   = Enum.TextTruncate.None
+detailLabel.TextWrapped    = true
 detailLabel.TextYAlignment = Enum.TextYAlignment.Top
 
--- Section 2: Args Editor label — 10% dari top
-local argsEditorLabel = mkLabel(rightPanel,
-    "ARGS EDITOR",
-    UDim2.new(1,-8,0,12),
-    UDim2.new(0,4,0.24,0),
-    C.goldText, 9, Enum.Font.GothamBold)
+-- Args editor
+mkLabel(rightPanel,"ARGS EDITOR",
+    UDim2.new(1,-8,0,12),UDim2.new(0,4,0.24,0),C.goldText,9,Enum.Font.GothamBold)
 
--- Args editor frame — fixed height 70px
 local argsEditorFrame = mkFrame(rightPanel,
-    UDim2.new(1,-8,0,70),
-    UDim2.new(0,4,0.27,0),
-    C.bg, 4)
+    UDim2.new(1,-8,0,70), UDim2.new(0,4,0.27,0), C.bg, 4)
 mkStroke(argsEditorFrame, C.gold, 1)
-argsEditorFrame.ZIndex = 2
-argsEditorFrame.ClipsDescendants = true
+argsEditorFrame.ZIndex = 2; argsEditorFrame.ClipsDescendants = true
 
 local argsEditor = Instance.new("TextBox")
-argsEditor.Size = UDim2.new(1,-8,1,-8)
-argsEditor.Position = UDim2.new(0,4,0,4)
+argsEditor.Size              = UDim2.new(1,-8,1,-8)
+argsEditor.Position          = UDim2.new(0,4,0,4)
 argsEditor.BackgroundTransparency = 1
-argsEditor.Text = ""
-argsEditor.PlaceholderText = '-- satu arg satu baris\n"string"\n123\ntrue'
-argsEditor.TextColor3 = C.white
+argsEditor.Text              = ""
+argsEditor.PlaceholderText   = '-- satu arg satu baris\n"string"\n123\ntrue'
+argsEditor.TextColor3        = C.white
 argsEditor.PlaceholderColor3 = C.dim
-argsEditor.TextSize = 10
-argsEditor.Font = Enum.Font.Code
-argsEditor.TextXAlignment = Enum.TextXAlignment.Left
-argsEditor.TextYAlignment = Enum.TextYAlignment.Top
-argsEditor.MultiLine = true
-argsEditor.ClearTextOnFocus = false
-argsEditor.TextWrapped = false
-argsEditor.ZIndex = 2
-argsEditor.Parent = argsEditorFrame
+argsEditor.TextSize          = 10
+argsEditor.Font               = Enum.Font.Code
+argsEditor.TextXAlignment    = Enum.TextXAlignment.Left
+argsEditor.TextYAlignment    = Enum.TextYAlignment.Top
+argsEditor.MultiLine         = true
+argsEditor.ClearTextOnFocus  = false
+argsEditor.TextWrapped       = false
+argsEditor.ZIndex            = 2
+argsEditor.Parent            = argsEditorFrame
 
--- Section 3: Action buttons — direct children of rightPanel, ZIndex tinggi
-local replayBtn = mkBtn(rightPanel, "▶ Replay Once",
-    UDim2.new(0.5,-3,0,28),
-    UDim2.new(0,4,0.62,2),
-    C.green, C.bg, 11)
+-- Action buttons
+local replayBtn     = mkBtn(rightPanel,"▶ Replay Once",
+    UDim2.new(0.5,-3,0,28),UDim2.new(0,4,0.62,2),C.green,C.bg,11)
 replayBtn.ZIndex = 10
 
-local spamToggleBtn = mkBtn(rightPanel, "⏱ Spam",
-    UDim2.new(0.5,-3,0,28),
-    UDim2.new(0.5,1,0.62,2),
-    C.gold, C.bg, 11)
+local spamToggleBtn = mkBtn(rightPanel,"⏱ Spam",
+    UDim2.new(0.5,-3,0,28),UDim2.new(0.5,1,0.62,2),C.gold,C.bg,11)
 spamToggleBtn.ZIndex = 10
 
--- Section 4: Spam panel (74%-100%, hidden by default)
+-- Spam panel
 local spamPanel = mkFrame(rightPanel,
-    UDim2.new(1,-8,0.26,-4),
-    UDim2.new(0,4,0.74,0),
-    C.bg, 4)
+    UDim2.new(1,-8,0.26,-4),UDim2.new(0,4,0.74,0),C.bg,4)
 mkStroke(spamPanel, C.orange, 1)
-spamPanel.ClipsDescendants = false
-spamPanel.ZIndex = 10
-spamPanel.Active = false
-spamPanel.Visible = false
-spamPanel.Active = false
+spamPanel.ZIndex = 10; spamPanel.Visible = false
 
--- Interval row
-mkLabel(spamPanel, "Interval (ms):",
-    UDim2.new(0,80,0,20), UDim2.new(0,4,0,4),
-    C.goldText, 10).ZIndex = 11
+mkLabel(spamPanel,"Interval (ms):",
+    UDim2.new(0,80,0,20),UDim2.new(0,4,0,4),C.goldText,10).ZIndex = 11
 
-local intervalInput = mkInput(spamPanel, "350",
-    UDim2.new(0,60,0,20), UDim2.new(0,88,0,4))
-intervalInput.TextSize = 11
-intervalInput.ZIndex = 11
+local intervalInput = mkInput(spamPanel,"350",UDim2.new(0,60,0,20),UDim2.new(0,88,0,4))
+intervalInput.TextSize = 11; intervalInput.ZIndex = 11
 
-local spamStartBtn = mkBtn(spamPanel, "▶ Start",
-    UDim2.new(0,52,0,20), UDim2.new(1,-110,0,4),
-    C.green, C.bg, 11)
+local spamStartBtn = mkBtn(spamPanel,"▶ Start",UDim2.new(0,52,0,20),UDim2.new(1,-110,0,4),C.green,C.bg,11)
 spamStartBtn.ZIndex = 11
+local spamStopBtn  = mkBtn(spamPanel,"⏹ Stop", UDim2.new(0,52,0,20),UDim2.new(1,-56,0,4), C.red,C.white,11)
+spamStopBtn.ZIndex = 11; spamStopBtn.Visible = false
 
-local spamStopBtn = mkBtn(spamPanel, "⏹ Stop",
-    UDim2.new(0,52,0,20), UDim2.new(1,-56,0,4),
-    C.red, C.white, 11)
-spamStopBtn.ZIndex = 11
-spamStopBtn.Visible = false
-
--- Count label
-local spamCountLabel = mkLabel(spamPanel, "Fired: 0",
-    UDim2.new(1,-8,0,16), UDim2.new(0,4,0.55,0),
-    C.white, 10)
+local spamCountLabel = mkLabel(spamPanel,"Fired: 0",
+    UDim2.new(1,-8,0,16),UDim2.new(0,4,0.55,0),C.white,10)
 spamCountLabel.ZIndex = 11
 
--- RIGHT bottom bar — Export + Copy Script
+-- Right bottom bar
 local rightBottomBar = mkFrame(rspyContent,
     UDim2.new(0.5,-8,0,SPLIT_BOT-4),
-    UDim2.new(0.5,GAP,1,-SPLIT_BOT),
-    C.panelDark, 5)
-
-local exportSelBtn = mkBtn(rightBottomBar, "📤 Export",
-    UDim2.new(0.5,-6,1,-4), UDim2.new(0,4,0,2),
-    C.goldBr, C.bg, 11)
-
-local copyScriptBtn = mkBtn(rightBottomBar, "📋 Copy Script",
-    UDim2.new(0.5,-6,1,-4), UDim2.new(0.5,2,0,2),
-    C.gold, C.bg, 11)
+    UDim2.new(0.5,GAP,1,-SPLIT_BOT), C.panelDark, 5)
+local exportSelBtn  = mkBtn(rightBottomBar,"📤 Export",     UDim2.new(0.5,-6,1,-4),UDim2.new(0,4,0,2),  C.goldBr,C.bg,11)
+local copyScriptBtn = mkBtn(rightBottomBar,"📋 Copy Script",UDim2.new(0.5,-6,1,-4),UDim2.new(0.5,2,0,2),C.gold,C.bg,11)
 
 -- ================================================
 -- rSPY HELPERS
 -- ================================================
 local function describeValue(v)
     local t = type(v)
-    if t == "buffer" then
-        local len = buffer.len(v)
-        local hex = {}
-        for i=0,math.min(len-1,6) do
-            table.insert(hex,string.format("%02X",buffer.readu8(v,i)))
-        end
-        return string.format("<buf:%db>[%s%s]",
-            len,table.concat(hex," "),len>7 and "..." or "")
-    elseif t == "Instance" then
-        return "["..v.ClassName.."]"..v.Name
-    elseif t == "Vector3" then
-        return string.format("V3(%.1f,%.1f,%.1f)",v.X,v.Y,v.Z)
-    elseif t == "table" then
-        local p,c = {},0
-        for k,val in pairs(v) do
-            c+=1
-            if c<=3 then table.insert(p,tostring(k).."="..tostring(val)) end
-        end
+    if t=="buffer" then
+        local len=buffer.len(v); local hex={}
+        for i=0,math.min(len-1,6) do table.insert(hex,string.format("%02X",buffer.readu8(v,i))) end
+        return string.format("<buf:%db>[%s%s]",len,table.concat(hex," "),len>7 and "..." or "")
+    elseif t=="Instance" then return "["..v.ClassName.."]"..v.Name
+    elseif t=="Vector3"  then return string.format("V3(%.1f,%.1f,%.1f)",v.X,v.Y,v.Z)
+    elseif t=="table" then
+        local p,c={},0
+        for k,val in pairs(v) do c+=1; if c<=3 then table.insert(p,tostring(k).."="..tostring(val)) end end
         return "{"..table.concat(p,",")..(c>3 and "..." or "").."}"
-    else
-        return tostring(v)
-    end
+    else return tostring(v) end
 end
 
 local function describeArgs(args)
     if #args==0 then return "(no args)" end
-    local p = {}
-    for _,v in ipairs(args) do table.insert(p,describeValue(v)) end
+    local p={}; for _,v in ipairs(args) do table.insert(p,describeValue(v)) end
     return table.concat(p,", ")
 end
 
 local function hasBuffer(args)
-    for _,v in ipairs(args) do
-        if type(v)=="buffer" then return true end
-    end
+    for _,v in ipairs(args) do if type(v)=="buffer" then return true end end
     return false
 end
 
 local function getHexFull(args)
-    local r = {}
+    local r={}
     for i,v in ipairs(args) do
         if type(v)=="buffer" then
-            local len = buffer.len(v)
-            local hex,asc = {},{}
+            local len=buffer.len(v); local hex,asc={},{}
             for j=0,len-1 do
-                local b = buffer.readu8(v,j)
+                local b=buffer.readu8(v,j)
                 table.insert(hex,string.format("%02X",b))
                 table.insert(asc,(b>=32 and b<=126) and string.char(b) or ".")
             end
             table.insert(r,string.format("[Arg%d %db]\nHEX: %s\nASC: %s",
                 i,len,table.concat(hex," "),table.concat(asc,"")))
-        else
-            table.insert(r,"[Arg"..i.."] "..tostring(v))
-        end
+        else table.insert(r,"[Arg"..i.."] "..tostring(v)) end
     end
     return table.concat(r,"\n")
 end
 
+-- Build WaitForChild chain from full path (shared helper)
+local function buildChain(path)
+    local parts={}
+    for p in path:gmatch("[^%.]+") do table.insert(parts,p) end
+    if #parts==0 then return nil end
+    local chain='game:GetService("'..parts[1]..'")'
+    for i=2,#parts do chain=chain..':WaitForChild("'..parts[i]..'")' end
+    return chain
+end
+
+-- Build args lines for script generation (shared helper)
+local function buildArgsLines(args)
+    if not args or #args==0 then return nil end
+    local out={}
+    for _,v in ipairs(args) do
+        local t=type(v)
+        if t=="string" then table.insert(out,'\t"'..v:gsub('"','\\"')..'"')
+        elseif t=="number" or t=="boolean" then table.insert(out,"\t"..tostring(v))
+        elseif t=="buffer" then table.insert(out,"\t-- <buffer> semak Hex")
+        else table.insert(out,"\t-- "..tostring(v)) end
+    end
+    return out
+end
+
+-- Generate exploit script string (shared helper)
+local function generateScript(log)
+    if not log then return nil end
+    local chain    = buildChain(log.path)
+    local argLines = buildArgsLines(log.args)
+    local lines    = {}
+    if chain then
+        if log.dir=="C>S" then
+            if argLines and #argLines>0 then
+                table.insert(lines,"local args = {")
+                for _,al in ipairs(argLines) do table.insert(lines,al..",") end
+                table.insert(lines,"}")
+                table.insert(lines,chain..":FireServer(unpack(args))")
+            else
+                table.insert(lines,chain..":FireServer()")
+            end
+        else
+            table.insert(lines,"-- S>C remote, server yang fire")
+            table.insert(lines,chain..":OnClientEvent:Connect(function(...)")
+            table.insert(lines,"\tprint(...)"); table.insert(lines,"end)")
+        end
+    end
+    return table.concat(lines,"\n")
+end
+
 -- ================================================
 -- rSPY LOG BUILDER
+-- Hook sentiasa capture. rspyVisible = display control je.
 -- ================================================
 local function addRspyLog(dir, name, path, args)
-    if paused then return end
-    -- Direction filter
-    if dirFilter == "cs" and dir ~= "C>S" then return end
-    if dirFilter == "sc" and dir ~= "S>C" then return end
-    local filter = rspySearch.Text:lower()
-    if filter~="" and not name:lower():find(filter,1,true) then return end
+    -- rspyVisible = false means user stopped display, skip
+    if not rspyVisible then return end
+    if dirFilter=="cs" and dir~="C>S" then return end
+    if dirFilter=="sc" and dir~="S>C" then return end
+    local f = rspySearch.Text:lower()
+    if f~="" and not name:lower():find(f,1,true) then return end
 
     remoteCount[path] = (remoteCount[path] or 0)+1
+    local now        = os.clock()
+    local intervalMs = remoteLastFire[path] and math.floor((now-remoteLastFire[path])*1000) or nil
+    remoteLastFire[path] = now
+
     local isBuf   = hasBuffer(args)
     local argsStr = describeArgs(args)
     local ts      = os.date("%M:%S")
-    local now     = os.clock()
-
-    -- Cooldown: kira ms dari last fire remote yang sama
-    local intervalMs = nil
-    if remoteLastFire[path] then
-        intervalMs = math.floor((now - remoteLastFire[path]) * 1000)
-    end
-    remoteLastFire[path] = now
 
     local entry = {
         dir=dir, name=name, path=path,
         args=args, argsStr=argsStr,
-        isBuf=isBuf, time=ts,
-        intervalMs=intervalMs  -- nil kalau first fire
+        isBuf=isBuf, time=ts, intervalMs=intervalMs
     }
     table.insert(remoteLogs,1,entry)
     if #remoteLogs>maxLogs then table.remove(remoteLogs) end
 
-    local dirColor = dir=="C>S" and C.orange
-        or dir=="S>C" and C.blue or C.purple
+    local dirColor = dir=="C>S" and C.orange or dir=="S>C" and C.blue or C.purple
 
-    -- Row height 34 — 2 line layout
-    local row = mkFrame(rspyScroll,
-        UDim2.new(1,-4,0,34),nil,C.panel,3)
+    local row = mkFrame(rspyScroll,UDim2.new(1,-4,0,34),nil,C.panel,3)
     row.LayoutOrder = -os.clock()*1000
 
-    -- LINE 1: [dir tag] [buf tag?] [name] ... [x count] [interval badge]
     -- Dir tag
-    local dtag = mkFrame(row,
-        UDim2.new(0,28,0,14),UDim2.new(0,3,0,2),dirColor,3)
-    mkLabel(dtag,dir,
-        UDim2.new(1,0,1,0),nil,
-        C.bg,8,Enum.Font.GothamBold,Enum.TextXAlignment.Center)
+    local dtag = mkFrame(row,UDim2.new(0,28,0,14),UDim2.new(0,3,0,2),dirColor,3)
+    mkLabel(dtag,dir,UDim2.new(1,0,1,0),nil,C.bg,8,Enum.Font.GothamBold,Enum.TextXAlignment.Center)
 
-    -- Buf tag (optional)
+    -- Buf tag
     local nameX = 34
     if isBuf then
-        local btag = mkFrame(row,
-            UDim2.new(0,20,0,12),UDim2.new(0,34,0,3),C.purple,3)
-        mkLabel(btag,"buf",
-            UDim2.new(1,0,1,0),nil,
-            C.white,7,Enum.Font.GothamBold,Enum.TextXAlignment.Center)
+        local btag = mkFrame(row,UDim2.new(0,20,0,12),UDim2.new(0,34,0,3),C.purple,3)
+        mkLabel(btag,"buf",UDim2.new(1,0,1,0),nil,C.white,7,Enum.Font.GothamBold,Enum.TextXAlignment.Center)
         nameX = 57
     end
 
-    -- Interval badge (kanan atas)
-    local intervalStr = intervalMs and (
-        intervalMs >= 1000
-        and string.format("+%.1fs", intervalMs/1000)
-        or "+"..intervalMs.."ms"
-    ) or "new"
+    -- Interval badge
+    local iStr   = intervalMs and (intervalMs>=1000 and string.format("+%.1fs",intervalMs/1000) or "+"..intervalMs.."ms") or "new"
+    local iColor = not intervalMs and C.dim or intervalMs<50 and C.red or intervalMs<100 and C.orange or C.green
+    local ibadge = mkFrame(row,UDim2.new(0,54,0,14),UDim2.new(1,-57,0,2),C.panelDark,3)
+    mkLabel(ibadge,iStr,UDim2.new(1,0,1,0),nil,iColor,9,Enum.Font.GothamBold,Enum.TextXAlignment.Center)
 
-    local intervalColor = C.dim
-    if intervalMs then
-        if intervalMs < 50 then
-            intervalColor = C.red
-        elseif intervalMs < 100 then
-            intervalColor = C.orange
-        else
-            intervalColor = C.green
-        end
-    end
-
-    -- Interval badge background
-    local ibadge = mkFrame(row,
-        UDim2.new(0,54,0,14),UDim2.new(1,-57,0,2),C.panelDark,3)
-    mkLabel(ibadge, intervalStr,
-        UDim2.new(1,0,1,0),nil,
-        intervalColor,9,Enum.Font.GothamBold,Enum.TextXAlignment.Center)
-
-    -- Count label kiri ibadge
-    mkLabel(row,"x"..remoteCount[path],
-        UDim2.new(0,24,0,14),UDim2.new(1,-83,0,2),
-        C.dimDark,9,Enum.Font.Gotham,Enum.TextXAlignment.Right)
-
-    -- Remote name (line 1, potong kalau panjang)
-    mkLabel(row,name,
-        UDim2.new(1,-nameX-90,0,14),UDim2.new(0,nameX,0,2),
-        C.goldText,11,Enum.Font.GothamBold)
-
-    -- LINE 2: args preview (penuh width)
-    mkLabel(row,argsStr,
-        UDim2.new(1,-8,0,13),UDim2.new(0,4,0,18),
-        C.white,9,Enum.Font.Code)
+    mkLabel(row,"x"..remoteCount[path],UDim2.new(0,24,0,14),UDim2.new(1,-83,0,2),C.dimDark,9,Enum.Font.Gotham,Enum.TextXAlignment.Right)
+    mkLabel(row,name,UDim2.new(1,-nameX-90,0,14),UDim2.new(0,nameX,0,2),C.goldText,11,Enum.Font.GothamBold)
+    mkLabel(row,argsStr,UDim2.new(1,-8,0,13),UDim2.new(0,4,0,18),C.white,9,Enum.Font.Code)
 
     local rb = Instance.new("TextButton")
-    rb.Size = UDim2.new(1,0,1,0)
-    rb.BackgroundTransparency = 1
-    rb.Text = ""
-    rb.Parent = row
+    rb.Size = UDim2.new(1,0,1,0); rb.BackgroundTransparency = 1; rb.Text = ""; rb.Parent = row
     rb.MouseButton1Click:Connect(function()
         selectedLog = entry
 
-        -- Update info panel
-        local cooldownStr = entry.intervalMs and (
-            entry.intervalMs >= 1000
-            and string.format("%.2fs", entry.intervalMs/1000)
-            or entry.intervalMs.."ms"
-        ) or "first"
-        detailLabel.Text = string.format(
-            "[%s] %s  %s\n%s\n\nArgs: %s",
-            dir, name, cooldownStr, path, argsStr)
+        local cStr = intervalMs and (intervalMs>=1000 and string.format("%.2fs",intervalMs/1000) or intervalMs.."ms") or "first"
+        detailLabel.Text = string.format("[%s] %s  %s\n%s\n\nArgs: %s",dir,name,cStr,path,argsStr)
 
-        -- Auto-populate args editor — satu arg satu baris
-        local editorLines = {}
-        for _, v in ipairs(entry.args or {}) do
-            local t = type(v)
-            if t == "string" then
-                table.insert(editorLines, '"'..v:gsub('"', '\\"')..'"')
-            elseif t == "number" or t == "boolean" then
-                table.insert(editorLines, tostring(v))
-            elseif t == "buffer" then
-                table.insert(editorLines, "-- <buffer>")
-            else
-                table.insert(editorLines, "-- "..tostring(v))
-            end
+        -- Populate args editor
+        local edLines={}
+        for _,v in ipairs(entry.args or {}) do
+            local t=type(v)
+            if t=="string" then table.insert(edLines,'"'..v:gsub('"','\\"')..'"')
+            elseif t=="number" or t=="boolean" then table.insert(edLines,tostring(v))
+            elseif t=="buffer" then table.insert(edLines,"-- <buffer>")
+            else table.insert(edLines,"-- "..tostring(v)) end
         end
-        argsEditor.Text = table.concat(editorLines, "\n")
+        argsEditor.Text = table.concat(edLines,"\n")
+        if intervalMs and intervalMs>0 then intervalInput.Text = tostring(intervalMs) end
 
-        -- Auto-fill interval input dari cooldown tracker
-        if entry.intervalMs and entry.intervalMs > 0 then
-            intervalInput.Text = tostring(entry.intervalMs)
-        end
-
-        -- Highlight row
         for _,c in pairs(rspyScroll:GetChildren()) do
             if c:IsA("Frame") then c.BackgroundColor3=C.panel end
         end
@@ -1067,603 +806,303 @@ local function addRspyLog(dir, name, path, args)
     end)
 
     rspyCount.Text = #remoteLogs.." events"
-    if rspyAutoScroll then
-        rspyScroll.CanvasPosition = Vector2.new(0,0)
-    end
+    if rspyAutoScroll then rspyScroll.CanvasPosition = Vector2.new(0,0) end
 end
 
 -- ================================================
 -- rSPY CONTROLS
 -- ================================================
 pauseBtn.MouseButton1Click:Connect(function()
-    paused = not paused
-    if paused then
-        pauseBtn.Text = "▶ Play"
-        pauseBtn.BackgroundColor3 = C.green
-        pauseBtn.TextColor3 = C.bg
-        rspyStatus.Text = "⏹ Stopped"
-        rspyStatus.TextColor3 = C.red
+    rspyVisible = not rspyVisible
+    if rspyVisible then
+        pauseBtn.Text = "⏹ Stop"; pauseBtn.BackgroundColor3 = C.orange; pauseBtn.TextColor3 = C.bg
+        rspyStatus.Text = "● Listening..."; rspyStatus.TextColor3 = C.green
     else
-        pauseBtn.Text = "⏹ Stop"
-        pauseBtn.BackgroundColor3 = C.orange
-        pauseBtn.TextColor3 = C.bg
-        rspyStatus.Text = "● Listening..."
-        rspyStatus.TextColor3 = C.green
+        pauseBtn.Text = "▶ Play"; pauseBtn.BackgroundColor3 = C.green; pauseBtn.TextColor3 = C.bg
+        rspyStatus.Text = "⏹ Stopped"; rspyStatus.TextColor3 = C.red
     end
 end)
 
 clearRspyBtn.MouseButton1Click:Connect(function()
-    remoteLogs = {}
-    remoteCount = {}
-    remoteLastFire = {}
-    for _,c in pairs(rspyScroll:GetChildren()) do
-        if c:IsA("Frame") then c:Destroy() end
-    end
-    rspyCount.Text = "0 events"
-    detailLabel.Text = "[ Tap log untuk detail ]"
-    argsEditor.Text = ""
-    selectedLog = nil
-end)
-
--- ================================================
--- REPLAY / SPAM LOGIC
--- ================================================
-
--- Parse args editor text → table of Lua values
-local function parseArgsEditor()
-    local result = {}
-    for line in argsEditor.Text:gmatch("[^\n]+") do
-        line = line:match("^%s*(.-)%s*$") -- trim
-        if line == "" or line:sub(1,2) == "--" then
-            -- skip empty lines and comments
-        elseif line == "true" then
-            table.insert(result, true)
-        elseif line == "false" then
-            table.insert(result, false)
-        elseif tonumber(line) then
-            table.insert(result, tonumber(line))
-        elseif line:sub(1,1) == '"' and line:sub(-1) == '"' then
-            -- strip surrounding quotes, unescape
-            -- wrap gsub dalam () supaya ambil first return value je
-            table.insert(result, (line:sub(2,-2):gsub('\\"', '"')))
-        else
-            table.insert(result, line)
-        end
-    end
-    return result
-end
-
--- Fire remote dengan parsed args
-local function fireRemote(log, args)
-    if not log then return false, "No remote selected" end
-
-    -- Guna loadstring approach — exactly macam manual fire yang confirmed work
-    local argParts = {}
-    for _, v in ipairs(args) do
-        local t = type(v)
-        if t == "string" then
-            table.insert(argParts, string.format("%q", v))
-        elseif t == "number" or t == "boolean" then
-            table.insert(argParts, tostring(v))
-        else
-            table.insert(argParts, string.format("%q", tostring(v)))
-        end
-    end
-
-    -- Build path chain
-    local parts = {}
-    for p in log.path:gmatch("[^%.]+") do
-        table.insert(parts, p)
-    end
-    local chain = 'game:GetService("' .. parts[1] .. '")'
-    for i = 2, #parts do
-        chain = chain .. ':WaitForChild("' .. parts[i] .. '")'
-    end
-
-    local argStr = table.concat(argParts, ", ")
-    local code = chain .. ':FireServer(' .. argStr .. ')'
-
-    local fn, err = loadstring(code)
-    if not fn then return false, "loadstring error: "..tostring(err) end
-
-    local ok, ferr = pcall(fn)
-    return ok, ferr
-end
-
--- Spam state
-local spamActive   = false
-local spamThread   = nil
-local spamCount    = 0
-local spamPanelOpen = false
-
--- Toggle spam panel visibility
-spamToggleBtn.MouseButton1Click:Connect(function()
-    spamPanelOpen = not spamPanelOpen
-    spamPanel.Visible = spamPanelOpen
-    spamPanel.Active = spamPanelOpen
-    spamToggleBtn.BackgroundColor3 = spamPanelOpen and C.orange or C.gold
-    spamToggleBtn.TextColor3 = spamPanelOpen and C.bg or C.bg
-    spamToggleBtn.Text = spamPanelOpen and "⏱ Spam ▲" or "⏱ Spam"
-end)
-
--- Replay Once
-replayBtn.MouseButton1Click:Connect(function()
-    -- Release TextBox focus dulu supaya tak block
-    argsEditor:ReleaseFocus()
-    task.defer(function()
-        if not selectedLog then
-            replayBtn.Text = "Select log!"
-            task.delay(1.5, function() replayBtn.Text = "▶ Replay Once" end)
-            return
-        end
-        local parseOk, argsOrErr = pcall(parseArgsEditor)
-        if not parseOk then
-            addConLog("Parse error: "..tostring(argsOrErr), C.red, "[rspy]")
-            replayBtn.Text = "✗ Error"
-            task.delay(2, function() replayBtn.Text = "▶ Replay Once" end)
-            return
-        end
-        local args = argsOrErr
-        addConLog("Replaying: "..selectedLog.name.." ("..#args.." args)", C.goldText, "[rspy]")
-        local ok, err = fireRemote(selectedLog, args)
-        if ok then
-            replayBtn.Text = "✓ Fired!"
-            addConLog("Replay OK!", C.green, "[rspy]")
-            task.delay(1, function() replayBtn.Text = "▶ Replay Once" end)
-        else
-            replayBtn.Text = "✗ Error"
-            addConLog("Replay error: "..tostring(err), C.red, "[rspy]")
-            task.delay(2, function() replayBtn.Text = "▶ Replay Once" end)
-        end
-    end)
-end)
-
--- Spam Start
-spamStartBtn.MouseButton1Click:Connect(function()
-    if not selectedLog then
-        spamStartBtn.Text = "Select log!"
-        task.delay(1.5, function() spamStartBtn.Text = "▶ Start" end)
-        return
-    end
-    if spamActive then return end
-
-    local ms = tonumber(intervalInput.Text) or 350
-    if ms < 50 then ms = 50 end  -- minimum 50ms, elak crash
-
-    spamActive = true
-    spamCount  = 0
-    spamStartBtn.Visible = false
-    spamStopBtn.Visible  = true
-    spamCountLabel.Text  = "Fired: 0"
-    spamToggleBtn.BackgroundColor3 = C.red
-
-    spamThread = task.spawn(function()
-        while spamActive do
-            local args = parseArgsEditor()
-            local ok, err = fireRemote(selectedLog, args)
-            if ok then
-                spamCount += 1
-                spamCountLabel.Text = "Fired: "..spamCount
-            else
-                -- Auto stop kalau remote error
-                spamActive = false
-                addConLog("Spam stopped — error: "..tostring(err), C.red, "[rspy]")
-                break
-            end
-            task.wait(ms / 1000)
-        end
-        -- Cleanup UI
-        spamStartBtn.Visible = true
-        spamStopBtn.Visible  = false
-        spamToggleBtn.BackgroundColor3 = spamPanelOpen and C.orange or C.gold
-    end)
-end)
-
--- Spam Stop
-spamStopBtn.MouseButton1Click:Connect(function()
-    spamActive = false
-    addConLog("Spam stopped. Total fired: "..spamCount, C.green, "[rspy]")
+    remoteLogs={};remoteCount={};remoteLastFire={}
+    for _,c in pairs(rspyScroll:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
+    rspyCount.Text="0 events"; detailLabel.Text="[ Tap log untuk detail ]"
+    argsEditor.Text=""; selectedLog=nil
 end)
 
 asRspyBtn.MouseButton1Click:Connect(function()
     rspyAutoScroll = not rspyAutoScroll
     asRspyBtn.BackgroundColor3 = rspyAutoScroll and C.goldBr or C.dimDark
-    asRspyBtn.TextColor3 = rspyAutoScroll and C.bg or C.goldText
+    asRspyBtn.TextColor3       = rspyAutoScroll and C.bg     or C.goldText
 end)
 
--- Direction filter handlers
+-- Direction filter
 local function updateDirBtns()
-    dirBothBtn.BackgroundColor3 = dirFilter=="both" and C.goldBr or C.tabInactive
-    dirBothBtn.TextColor3 = dirFilter=="both" and C.bg or C.goldText
-    dirCSBtn.BackgroundColor3 = dirFilter=="cs" and C.orange or C.tabInactive
-    dirCSBtn.TextColor3 = dirFilter=="cs" and C.bg or C.orange
-    dirSCBtn.BackgroundColor3 = dirFilter=="sc" and C.blue or C.tabInactive
-    dirSCBtn.TextColor3 = dirFilter=="sc" and C.bg or C.blue
+    dirBothBtn.BackgroundColor3 = dirFilter=="both" and C.goldBr or C.tabInactive;  dirBothBtn.TextColor3 = dirFilter=="both" and C.bg or C.goldText
+    dirCSBtn.BackgroundColor3   = dirFilter=="cs"   and C.orange or C.tabInactive;  dirCSBtn.TextColor3   = dirFilter=="cs"   and C.bg or C.orange
+    dirSCBtn.BackgroundColor3   = dirFilter=="sc"   and C.blue   or C.tabInactive;  dirSCBtn.TextColor3   = dirFilter=="sc"   and C.bg or C.blue
 end
-
-dirBothBtn.MouseButton1Click:Connect(function()
-    dirFilter = "both"
-    updateDirBtns()
-end)
-
-dirCSBtn.MouseButton1Click:Connect(function()
-    dirFilter = "cs"
-    updateDirBtns()
-end)
-
-dirSCBtn.MouseButton1Click:Connect(function()
-    dirFilter = "sc"
-    updateDirBtns()
-end)
-
+dirBothBtn.MouseButton1Click:Connect(function() dirFilter="both"; updateDirBtns() end)
+dirCSBtn.MouseButton1Click:Connect(function()   dirFilter="cs";   updateDirBtns() end)
+dirSCBtn.MouseButton1Click:Connect(function()   dirFilter="sc";   updateDirBtns() end)
 updateDirBtns()
 
-copyHexBtn.MouseButton1Click:Connect(function()
-    if not selectedLog then return end
-    copyClip(getHexFull(selectedLog.args))
-    copyHexBtn.Text = "✓ Done"
-    task.delay(1.5, function() copyHexBtn.Text = "📋 Hex" end)
-end)
-
--- Export all logs
-exportBtn.MouseButton1Click:Connect(function()
-    if #remoteLogs == 0 then
-        exportBtn.Text = "Nothing!"
-        task.delay(1.5, function() exportBtn.Text = "📤 Export All" end)
-        return
-    end
-
-    local lines = {}
-    table.insert(lines, "=== rSpy Export ===")
-    table.insert(lines, "Total: "..#remoteLogs.." events")
-    table.insert(lines, "")
-
-    local summary = {}
-    for path, count in pairs(remoteCount) do
-        table.insert(summary, {path=path, count=count})
-    end
-    table.sort(summary, function(a,b) return a.count > b.count end)
-
-    table.insert(lines, "=== TOP REMOTES ===")
-    for i, s in ipairs(summary) do
-        if i > 10 then break end
-        local name = s.path:match("([^%.]+)$") or s.path
-        table.insert(lines, string.format("#%d %s — x%d", i, name, s.count))
-    end
-    table.insert(lines, "")
-
-    table.insert(lines, "=== ALL LOGS ===")
-    for _, entry in ipairs(remoteLogs) do
-        local iStr = entry.intervalMs and ("+"..entry.intervalMs.."ms") or "new"
-        table.insert(lines, string.format("[%s][%s] %s | %s | %s",
-            entry.time, entry.dir, entry.name, entry.argsStr, iStr))
-    end
-
-    copyClip(table.concat(lines, "\n"))
-    exportBtn.Text = "✓ Copied!"
-    task.delay(2, function() exportBtn.Text = "📤 Export All" end)
-end)
-
--- Export selected log only
-exportSelBtn.MouseButton1Click:Connect(function()
-    if not selectedLog then
-        exportSelBtn.Text = "Select first!"
-        task.delay(1.5, function() exportSelBtn.Text = "📤 Export Selected" end)
-        return
-    end
-
-    local lines = {}
-    table.insert(lines, "=== Selected Remote ===")
-    table.insert(lines, "Name:     "..selectedLog.name)
-    table.insert(lines, "Path:     "..selectedLog.path)
-    table.insert(lines, "Dir:      "..selectedLog.dir)
-    table.insert(lines, "Time:     "..selectedLog.time)
-    table.insert(lines, "Args:     "..selectedLog.argsStr)
-
-    -- Interval info
-    if selectedLog.intervalMs then
-        local ms = selectedLog.intervalMs
-        local intervalFmt = ms >= 1000
-            and string.format("%.2fs", ms/1000)
-            or ms.."ms"
-        local freqFmt = ms > 0
-            and string.format("~%.1f/s", 1000/ms)
-            or "?"
-        table.insert(lines, "Interval: "..intervalFmt.."  ("..freqFmt..")")
-    else
-        table.insert(lines, "Interval: first fire")
-    end
-
-    table.insert(lines, "")
-    table.insert(lines, "-- Auto-generated exploit script:")
-
-    -- Build WaitForChild chain dari full path
-    -- contoh: "ReplicatedStorage.Packages.EventBus.RemoteEvent"
-    local function buildChain(path)
-        local parts = {}
-        for part in path:gmatch("[^%.]+") do
-            table.insert(parts, part)
-        end
-        if #parts == 0 then return nil end
-        local chain = 'game:GetService("' .. parts[1] .. '")'
-        for i = 2, #parts do
-            chain = chain .. ':WaitForChild("' .. parts[i] .. '")'
-        end
-        return chain
-    end
-
-    -- Build args table lines
-    local function buildArgsLines(args)
-        if not args or #args == 0 then return nil end
-        local out = {}
-        for _, v in ipairs(args) do
-            local t = type(v)
-            if t == "string" then
-                table.insert(out, '\t"' .. v:gsub('"', '\\"') .. '"')
-            elseif t == "number" or t == "boolean" then
-                table.insert(out, "\t" .. tostring(v))
-            elseif t == "buffer" then
-                table.insert(out, "\t-- <buffer> semak Hex panel")
-            else
-                table.insert(out, "\t-- "..tostring(v))
-            end
-        end
-        return out
-    end
-
-    local chain = buildChain(selectedLog.path)
-    local argLines = buildArgsLines(selectedLog.args)
-
-    if chain then
-        if selectedLog.dir == "C>S" then
-            if argLines and #argLines > 0 then
-                table.insert(lines, "local args = {")
-                for _, al in ipairs(argLines) do
-                    table.insert(lines, al..",")
-                end
-                table.insert(lines, "}")
-                table.insert(lines, chain..":FireServer(unpack(args))")
-            else
-                table.insert(lines, chain..":FireServer()")
-            end
-        else
-            table.insert(lines, "-- S>C remote, server yang fire")
-            table.insert(lines, chain..":OnClientEvent:Connect(function(...)")
-            table.insert(lines, "\tprint(...)")
-            table.insert(lines, "end)")
-        end
-    end
-
-    if selectedLog.isBuf then
-        table.insert(lines, "")
-        table.insert(lines, getHexFull(selectedLog.args))
-    end
-
-    copyClip(table.concat(lines, "\n"))
-    exportSelBtn.Text = "✓ Copied!"
-    task.delay(2, function() exportSelBtn.Text = "📤 Export" end)
-end)
-
--- Copy Script only (no metadata header)
-copyScriptBtn.MouseButton1Click:Connect(function()
-    if not selectedLog then
-        copyScriptBtn.Text = "Select first!"
-        task.delay(1.5, function() copyScriptBtn.Text = "📋 Copy Script" end)
-        return
-    end
-
-    local function buildChain(path)
-        local parts = {}
-        for part in path:gmatch("[^%.]+") do
-            table.insert(parts, part)
-        end
-        if #parts == 0 then return nil end
-        local chain = 'game:GetService("' .. parts[1] .. '")'
-        for i = 2, #parts do
-            chain = chain .. ':WaitForChild("' .. parts[i] .. '")'
-        end
-        return chain
-    end
-
-    local function buildArgsLines(args)
-        if not args or #args == 0 then return nil end
-        local out = {}
-        for _, v in ipairs(args) do
-            local t = type(v)
-            if t == "string" then
-                table.insert(out, '\t"' .. v:gsub('"', '\\"') .. '"')
-            elseif t == "number" or t == "boolean" then
-                table.insert(out, "\t"..tostring(v))
-            elseif t == "buffer" then
-                table.insert(out, "\t-- <buffer> semak Hex panel")
-            else
-                table.insert(out, "\t-- "..tostring(v))
-            end
-        end
-        return out
-    end
-
-    local chain = buildChain(selectedLog.path)
-    local argLines = buildArgsLines(selectedLog.args)
-    local scriptLines = {}
-
-    if chain then
-        if selectedLog.dir == "C>S" then
-            if argLines and #argLines > 0 then
-                table.insert(scriptLines, "local args = {")
-                for _, al in ipairs(argLines) do
-                    table.insert(scriptLines, al..",")
-                end
-                table.insert(scriptLines, "}")
-                table.insert(scriptLines, chain..":FireServer(unpack(args))")
-            else
-                table.insert(scriptLines, chain..":FireServer()")
-            end
-        else
-            table.insert(scriptLines, "-- S>C remote, server yang fire")
-            table.insert(scriptLines, chain..":OnClientEvent:Connect(function(...)")
-            table.insert(scriptLines, "\tprint(...)")
-            table.insert(scriptLines, "end)")
-        end
-    end
-
-    copyClip(table.concat(scriptLines, "\n"))
-    copyScriptBtn.Text = "✓ Copied!"
-    task.delay(2, function() copyScriptBtn.Text = "📋 Copy Script" end)
-end)
-
+-- Search
 rspySearch:GetPropertyChangedSignal("Text"):Connect(function()
     local f = rspySearch.Text:lower()
     for _,row in pairs(rspyScroll:GetChildren()) do
         if row:IsA("Frame") then
             for _,child in pairs(row:GetChildren()) do
                 if child:IsA("TextLabel") and child.TextColor3==C.goldText then
-                    row.Visible = f=="" or child.Text:lower():find(f,1,true)~=nil
-                    break
+                    row.Visible = f=="" or child.Text:lower():find(f,1,true)~=nil; break
                 end
             end
         end
     end
 end)
 
+-- Copy Hex
+copyHexBtn.MouseButton1Click:Connect(function()
+    if not selectedLog then return end
+    copyClip(getHexFull(selectedLog.args))
+    copyHexBtn.Text = "✓ Done"; task.delay(1.5, function() copyHexBtn.Text = "📋 Hex" end)
+end)
+
+-- Export All
+exportBtn.MouseButton1Click:Connect(function()
+    if #remoteLogs==0 then
+        exportBtn.Text = "Nothing!"; task.delay(1.5, function() exportBtn.Text = "📤 Export All" end); return
+    end
+    local lines={"=== rSpy Export ===","Total: "..#remoteLogs.." events",""}
+    local summary={}
+    for path,count in pairs(remoteCount) do table.insert(summary,{path=path,count=count}) end
+    table.sort(summary,function(a,b) return a.count>b.count end)
+    table.insert(lines,"=== TOP REMOTES ===")
+    for i,s in ipairs(summary) do
+        if i>10 then break end
+        table.insert(lines,string.format("#%d %s — x%d",i,s.path:match("([^%.]+)$") or s.path,s.count))
+    end
+    table.insert(lines,""); table.insert(lines,"=== ALL LOGS ===")
+    for _,e in ipairs(remoteLogs) do
+        table.insert(lines,string.format("[%s][%s] %s | %s | %s",
+            e.time,e.dir,e.name,e.argsStr,e.intervalMs and "+"..e.intervalMs.."ms" or "new"))
+    end
+    copyClip(table.concat(lines,"\n"))
+    exportBtn.Text = "✓ Copied!"; task.delay(2, function() exportBtn.Text = "📤 Export All" end)
+end)
+
+-- Export Selected
+exportSelBtn.MouseButton1Click:Connect(function()
+    if not selectedLog then
+        exportSelBtn.Text = "Select first!"; task.delay(1.5, function() exportSelBtn.Text = "📤 Export" end); return
+    end
+    local l = selectedLog
+    local lines = {"=== Selected Remote ===","Name: "..l.name,"Path: "..l.path,"Dir:  "..l.dir,"Time: "..l.time,"Args: "..l.argsStr}
+    if l.intervalMs then
+        local ms=l.intervalMs
+        table.insert(lines,"Interval: "..(ms>=1000 and string.format("%.2fs",ms/1000) or ms.."ms")
+            .."  ("..(ms>0 and string.format("~%.1f/s",1000/ms) or "?")..")")
+    end
+    table.insert(lines,""); table.insert(lines,"-- Generated script:")
+    local script = generateScript(l)
+    if script then table.insert(lines,script) end
+    if l.isBuf then table.insert(lines,""); table.insert(lines,getHexFull(l.args)) end
+    copyClip(table.concat(lines,"\n"))
+    exportSelBtn.Text = "✓ Copied!"; task.delay(2, function() exportSelBtn.Text = "📤 Export" end)
+end)
+
+-- Copy Script
+copyScriptBtn.MouseButton1Click:Connect(function()
+    if not selectedLog then
+        copyScriptBtn.Text = "Select first!"; task.delay(1.5, function() copyScriptBtn.Text = "📋 Copy Script" end); return
+    end
+    copyClip(generateScript(selectedLog) or "-- Could not generate")
+    copyScriptBtn.Text = "✓ Copied!"; task.delay(2, function() copyScriptBtn.Text = "📋 Copy Script" end)
+end)
+
+-- ================================================
+-- REPLAY / SPAM
+-- ================================================
+local function parseArgsEditor()
+    local result={}
+    for line in argsEditor.Text:gmatch("[^\n]+") do
+        line = line:match("^%s*(.-)%s*$")
+        if line~="" and line:sub(1,2)~="--" then
+            if line=="true" then table.insert(result,true)
+            elseif line=="false" then table.insert(result,false)
+            elseif tonumber(line) then table.insert(result,tonumber(line))
+            elseif line:sub(1,1)=='"' and line:sub(-1)=='"' then
+                table.insert(result,(line:sub(2,-2):gsub('\\"','"')))
+            else table.insert(result,line) end
+        end
+    end
+    return result
+end
+
+local function fireRemote(log, args)
+    if not log then return false,"No remote selected" end
+    local chain = buildChain(log.path)
+    if not chain then return false,"Invalid path" end
+    local argParts={}
+    for _,v in ipairs(args) do
+        local t=type(v)
+        if t=="string" then table.insert(argParts,string.format("%q",v))
+        elseif t=="number" or t=="boolean" then table.insert(argParts,tostring(v))
+        else table.insert(argParts,string.format("%q",tostring(v))) end
+    end
+    local fn,err = loadstring(chain..":FireServer("..table.concat(argParts,", ")..")")
+    if not fn then return false,"loadstring: "..tostring(err) end
+    local ok,ferr = pcall(fn)
+    -- Log ke rSpy selepas fire (bypass rspyVisible check tak perlu — hook akan catch)
+    return ok,ferr
+end
+
+spamToggleBtn.MouseButton1Click:Connect(function()
+    spamPanelOpen = not spamPanelOpen
+    spamPanel.Visible             = spamPanelOpen
+    spamToggleBtn.BackgroundColor3= spamPanelOpen and C.orange or C.gold
+    spamToggleBtn.Text            = spamPanelOpen and "⏱ Spam ▲" or "⏱ Spam"
+end)
+
+replayBtn.MouseButton1Click:Connect(function()
+    argsEditor:ReleaseFocus()
+    task.defer(function()
+        if not selectedLog then
+            replayBtn.Text = "Select log!"; task.delay(1.5, function() replayBtn.Text = "▶ Replay Once" end); return
+        end
+        local ok, args = pcall(parseArgsEditor)
+        if not ok then
+            addConLog("Parse error: "..tostring(args), C.red,"[rspy]")
+            replayBtn.Text = "✗ Error"; task.delay(2, function() replayBtn.Text = "▶ Replay Once" end); return
+        end
+        addConLog("Replaying: "..selectedLog.name.." ("..#args.." args)", C.goldText,"[rspy]")
+        local fired, err = fireRemote(selectedLog, args)
+        if fired then
+            replayBtn.Text = "✓ Fired!"; addConLog("Replay OK!", C.green,"[rspy]")
+            task.delay(1, function() replayBtn.Text = "▶ Replay Once" end)
+        else
+            replayBtn.Text = "✗ Error"; addConLog("Error: "..tostring(err), C.red,"[rspy]")
+            task.delay(2, function() replayBtn.Text = "▶ Replay Once" end)
+        end
+    end)
+end)
+
+spamStartBtn.MouseButton1Click:Connect(function()
+    if not selectedLog then
+        spamStartBtn.Text = "Select log!"; task.delay(1.5, function() spamStartBtn.Text = "▶ Start" end); return
+    end
+    if spamActive then return end
+    local ms = math.max(50, tonumber(intervalInput.Text) or 350)
+    spamActive=true; spamCount=0
+    spamStartBtn.Visible=false; spamStopBtn.Visible=true
+    spamCountLabel.Text="Fired: 0"; spamToggleBtn.BackgroundColor3=C.red
+
+    task.spawn(function()
+        while spamActive do
+            local ok,err = fireRemote(selectedLog, parseArgsEditor())
+            if ok then
+                spamCount+=1; spamCountLabel.Text="Fired: "..spamCount
+            else
+                spamActive=false
+                addConLog("Spam stopped — "..tostring(err), C.red,"[rspy]"); break
+            end
+            task.wait(ms/1000)
+        end
+        spamStartBtn.Visible=true; spamStopBtn.Visible=false
+        spamToggleBtn.BackgroundColor3 = spamPanelOpen and C.orange or C.gold
+    end)
+end)
+
+spamStopBtn.MouseButton1Click:Connect(function()
+    spamActive=false
+    addConLog("Spam stopped. Total: "..spamCount, C.green,"[rspy]")
+end)
+
 -- ================================================
 -- _G EXPORTS
 -- ================================================
-_G.log = addConLog
-_G.consoleLogs = logLines
+_G.log          = addConLog
+_G.consoleLogs  = logLines
 _G.consoleClear = function()
-    logLines = {}
-    for _,c in pairs(conScroll:GetChildren()) do
-        if c:IsA("Frame") then c:Destroy() end
-    end
+    logLines={}
+    for _,c in pairs(conScroll:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
     conCount.Text = "0 lines"
 end
--- Debug exports — boleh check dari console
-_G.getSelectedLog = function() return selectedLog end
-_G.replayBtn = replayBtn
-_G.spamToggleBtn = spamToggleBtn
-_G.testReplay = function()
-    if not selectedLog then
-        print("selectedLog nil!")
-        return
-    end
-    print("selectedLog:", selectedLog.name, selectedLog.path)
-    local parts = {}
-    for p in selectedLog.path:gmatch("[^%.]+") do
-        table.insert(parts, p)
-    end
-    local obj = game:GetService(parts[1])
-    for i = 2, #parts do
-        obj = obj:FindFirstChild(parts[i])
-    end
-    if obj then
-        local ok, err = pcall(function() obj:FireServer("PlayerStepAdd") end)
-        print("fire:", ok, err)
-    else
-        print("remote not found!")
-    end
-end
 
+-- ================================================
+-- OVERRIDE print / warn
+-- ================================================
 local _print = print
 local _warn  = warn
 
 print = function(...)
-    local p = {}
-    for _,v in ipairs({...}) do table.insert(p,tostring(v)) end
-    local msg = table.concat(p,"  ")
-    _print(msg)
-    addConLog(msg, C.white, "[print]")
+    local p={}; for _,v in ipairs({...}) do table.insert(p,tostring(v)) end
+    local msg=table.concat(p,"  "); _print(msg); addConLog(msg,C.white,"[print]")
 end
 
 warn = function(...)
-    local p = {}
-    for _,v in ipairs({...}) do table.insert(p,tostring(v)) end
-    addConLog(table.concat(p,"  "), C.orange, "[warn]")
+    local p={}; for _,v in ipairs({...}) do table.insert(p,tostring(v)) end
+    addConLog(table.concat(p,"  "),C.orange,"[warn]")
 end
 
 -- ================================================
 -- HOOK ALL REMOTES
--- hookmetamethod(__namecall) dengan cara betul:
--- 1. Capture args {...} DULU sebelum panggil orig
--- 2. checkcaller() — skip kalau script kita sendiri
---    yang fire (elak infinite loop)
--- 3. Original call tanpa pcall — zero interference
--- 4. Log via task.defer — async, lepas game fire
+-- hookmetamethod capture SEMUA sumber:
+-- game sendiri, console kita, console lain, IY, script lain.
+-- rspyVisible = display control je, hook sentiasa aktif.
 -- ================================================
 local hookOrig = nil
 
 local function startHook()
     if not hookmetamethod then
-        addConLog("hookmetamethod tidak tersedia!", C.red, "[err]")
-        return
+        addConLog("hookmetamethod tidak tersedia!", C.red,"[err]"); return
     end
 
-    hookOrig = hookmetamethod(game, "__namecall", function(self, ...)
+    hookOrig = hookmetamethod(game,"__namecall",function(self,...)
         local method = getnamecallmethod()
+        local args   = {...}
 
-        -- Capture args SEBELUM panggil original
-        -- (lepas call, vararg dah invalid dalam beberapa executor)
-        local args = {...}
+        -- Original call DULU — zero interference
+        local result = hookOrig(self,...)
 
-        -- Panggil original DULU — zero delay, no pcall wrapper
-        local result = hookOrig(self, ...)
-
-        -- Skip kalau bukan remote call yang kita nak
-        if not checkcaller()
-        and (method == "FireServer"
-          or method == "InvokeServer"
-          or method == "FireUnreliableServer") then
-            if not paused then
-                local name = self.Name
-                local ok, path = pcall(function() return self:GetFullName() end)
-                if ok then
-                    task.defer(function()
-                        if not paused then
-                            pcall(addRspyLog, "C>S", name, path, args)
-                        end
-                    end)
-                end
+        -- Log semua remote tanpa kira sumber (termasuk IY, console lain, dll)
+        if method=="FireServer"
+        or method=="InvokeServer"
+        or method=="FireUnreliableServer" then
+            local name = self.Name
+            local ok,path = pcall(function() return self:GetFullName() end)
+            if ok then
+                task.defer(function() pcall(addRspyLog,"C>S",name,path,args) end)
             end
         end
 
         return result
     end)
 
-    -- S>C via OnClientEvent
+    -- S>C
     local function connectRE(v)
         if v:IsA("RemoteEvent") then
             v.OnClientEvent:Connect(function(...)
-                if paused then return end
-                local args = {...}
-                local path = ""
-                pcall(function() path = v:GetFullName() end)
-                task.defer(function()
-                    if not paused then
-                        pcall(addRspyLog, "S>C", v.Name, path, args)
-                    end
-                end)
+                local args={...}; local path=""
+                pcall(function() path=v:GetFullName() end)
+                task.defer(function() pcall(addRspyLog,"S>C",v.Name,path,args) end)
             end)
         end
     end
 
-    for _,v in pairs(game:GetDescendants()) do pcall(connectRE, v) end
-    game.DescendantAdded:Connect(function(v)
-        task.wait()
-        pcall(connectRE, v)
-    end)
+    for _,v in pairs(game:GetDescendants()) do pcall(connectRE,v) end
+    game.DescendantAdded:Connect(function(v) task.wait(); pcall(connectRE,v) end)
 
-    addConLog("Hook aktif! Semua remote dimonitor.", C.green, "[sys]")
-    addConLog("C>S: namecall hook | S>C: OnClientEvent", C.dim, "[sys]")
+    addConLog("Hook aktif! Capture semua sumber.", C.green,"[sys]")
+    addConLog("Play/Stop = toggle display | hook sentiasa on.", C.dim,"[sys]")
 end
 
 startHook()
 
 -- ================================================
--- DEFAULT TAB + WELCOME
+-- INIT
 -- ================================================
 setTab("console")
-
-addConLog("Hub Tools v2.3 loaded!", C.green, "[sys]")
-addConLog("rSpy: Split panel — log kiri, detail kanan", C.dim, "[sys]")
-addConLog("Tap log → detail panel kanan update", C.dim, "[sys]")
-addConLog("UI naik bila keyboard buka", C.dim, "[sys]")
+addConLog("Hub Tools v3.0 loaded!", C.green,"[sys]")
+addConLog("rSpy capture semua — game, console, IY, script lain", C.dim,"[sys]")
+addConLog("Play/Stop control display je, bukan capture", C.dim,"[sys]")
