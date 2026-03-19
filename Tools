@@ -1124,25 +1124,50 @@ end
 -- Fire remote dengan parsed args
 local function fireRemote(log, args)
     if not log then return false, "No remote selected" end
-    local remote = nil
-    local ok, err = pcall(function()
-        -- Walk path to find remote
-        local parts = {}
-        for p in log.path:gmatch("[^%.]+") do
-            table.insert(parts, p)
-        end
-        local obj = game:GetService(parts[1])
-        for i = 2, #parts do
-            obj = obj:WaitForChild(parts[i], 3)
-        end
-        remote = obj
-    end)
-    if not ok or not remote then
-        return false, "Remote not found: "..(err or "")
+
+    -- Walk path terus tanpa pcall scope issue
+    local parts = {}
+    for p in log.path:gmatch("[^%.]+") do
+        table.insert(parts, p)
     end
-    local fireOk, fireErr = pcall(function()
-        remote:FireServer(table.unpack(args))
+
+    local obj
+    local walkOk, walkErr = pcall(function()
+        obj = game:GetService(parts[1])
+        for i = 2, #parts do
+            local child = obj:FindFirstChild(parts[i])
+            if not child then
+                -- Cuba WaitForChild sekali dengan timeout pendek
+                child = obj:WaitForChild(parts[i], 2)
+            end
+            if not child then
+                error("Cannot find: "..parts[i])
+            end
+            obj = child
+        end
     end)
+
+    if not walkOk or not obj then
+        return false, tostring(walkErr)
+    end
+
+    -- Fire terus, unpack args
+    local fireOk, fireErr = pcall(function()
+        if #args == 0 then
+            obj:FireServer()
+        elseif #args == 1 then
+            obj:FireServer(args[1])
+        elseif #args == 2 then
+            obj:FireServer(args[1], args[2])
+        elseif #args == 3 then
+            obj:FireServer(args[1], args[2], args[3])
+        elseif #args == 4 then
+            obj:FireServer(args[1], args[2], args[3], args[4])
+        else
+            obj:FireServer(table.unpack(args))
+        end
+    end)
+
     return fireOk, fireErr
 end
 
@@ -1169,9 +1194,12 @@ replayBtn.MouseButton1Click:Connect(function()
         return
     end
     local args = parseArgsEditor()
+    addConLog("Replaying: "..selectedLog.name.." | args: "..#args, C.goldText, "[rspy]")
+    addConLog("Path: "..selectedLog.path, C.dim, "[rspy]")
     local ok, err = fireRemote(selectedLog, args)
     if ok then
         replayBtn.Text = "✓ Fired!"
+        addConLog("Replay OK!", C.green, "[rspy]")
         task.delay(1, function() replayBtn.Text = "▶ Replay Once" end)
     else
         replayBtn.Text = "✗ Error"
