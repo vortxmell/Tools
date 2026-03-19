@@ -363,6 +363,8 @@ closeBtn.MouseButton1Click:Connect(function()
     _G.consoleClear = nil
     _G.getSelectedLog = nil
     _G.testReplay   = nil
+    _G.hubGui       = nil
+    _G.hubParent    = nil
     -- Restore print/warn
     print = _print
     warn  = _warn
@@ -1587,6 +1589,8 @@ end)
 -- ================================================
 _G.log          = addConLog
 _G.consoleLogs  = logLines
+_G.hubGui       = gui
+_G.hubParent    = guiParent
 _G.consoleClear = function()
     logLines={}
     for _,c in pairs(conScroll:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
