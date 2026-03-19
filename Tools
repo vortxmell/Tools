@@ -1091,70 +1091,117 @@ end
 
 -- ================================================
 -- HOOK ALL REMOTES
--- SAFE VERSION: Buang hookmetamethod global.
--- hookmetamethod wrap SEMUA __namecall calls —
--- terlalu heavy, boleh cause timing issue pada
--- game yang ada server-side rate/sequence check
--- (contoh: PlayerStepAdd).
+-- Cara SimpleSpy V3: hookfunction pada PROTOTYPE
+-- RemoteEvent.FireServer dan RemoteFunction.InvokeServer
+-- sekali je untuk semua instances — lebih ringan
+-- dari hookmetamethod global, tak ada timing issue.
 --
--- Ganti dengan:
--- C>S → wrap FireServer terus pada setiap remote
--- S>C → OnClientEvent (dah sedia safe)
--- paused flag = gate, kalau paused terus return
+-- Original call dipanggil DULU, log kemudian
+-- via task.defer supaya zero interference.
 -- ================================================
 local function startHook()
-    -- Wrap FireServer terus pada remote tu
-    -- Tak touch __namecall global langsung
-    local function hookRemote(v)
-        if not v:IsA("RemoteEvent") and not v:IsA("RemoteFunction") then return end
+    if not hookfunction then
+        addConLog("hookfunction tidak tersedia!", C.red, "[err]")
+        return
+    end
 
-        local path = ""
-        pcall(function() path = v:GetFullName() end)
+    -- Ambil prototype functions dari dummy instances
+    local dummyRE = Instance.new("RemoteEvent")
+    local dummyRF = Instance.new("RemoteFunction")
+    local dummyURE = pcall(function() return Instance.new("UnreliableRemoteEvent") end)
+                     and Instance.new("UnreliableRemoteEvent") or nil
 
-        -- S>C — selamat, tak interfere game
-        if v:IsA("RemoteEvent") then
-            v.OnClientEvent:Connect(function(...)
-                if paused then return end
-                pcall(addRspyLog, "S>C", v.Name, path, {...})
-            end)
-        end
+    local origFireServer   = dummyRE.FireServer
+    local origInvokeServer = dummyRF.InvokeServer
+    local origUnreliable   = dummyURE and dummyURE.FireServer or nil
 
-        -- C>S — wrap FireServer/InvokeServer pada remote specific
-        -- lebih selamat dari hook global __namecall
-        local origFire = v.FireServer
-        if origFire then
-            v.FireServer = newcclosure(function(self, ...)
-                if not paused then
-                    pcall(addRspyLog, "C>S", v.Name, path, {...})
-                end
-                return origFire(self, ...)  -- game call tetap jalan
-            end)
-        end
+    dummyRE:Destroy()
+    dummyRF:Destroy()
+    if dummyURE then dummyURE:Destroy() end
 
-        if v:IsA("RemoteFunction") then
-            local origInvoke = v.InvokeServer
-            if origInvoke then
-                v.InvokeServer = newcclosure(function(self, ...)
+    -- Hook FireServer (RemoteEvent)
+    hookfunction(origFireServer, newcclosure(function(self, ...)
+        -- ✅ Original fire DULU — zero delay, game tak kena affect
+        local result = table.pack(origFireServer(self, ...))
+        -- ✅ Log kemudian secara async
+        if not paused then
+            local args = {...}
+            local name = self.Name
+            local ok, path = pcall(function() return self:GetFullName() end)
+            if ok then
+                task.defer(function()
                     if not paused then
-                        pcall(addRspyLog, "C>S", v.Name, path, {...})
+                        pcall(addRspyLog, "C>S", name, path, args)
                     end
-                    return origInvoke(self, ...)
                 end)
             end
         end
+        return table.unpack(result, 1, result.n)
+    end))
+
+    -- Hook InvokeServer (RemoteFunction)
+    hookfunction(origInvokeServer, newcclosure(function(self, ...)
+        local result = table.pack(origInvokeServer(self, ...))
+        if not paused then
+            local args = {...}
+            local name = self.Name
+            local ok, path = pcall(function() return self:GetFullName() end)
+            if ok then
+                task.defer(function()
+                    if not paused then
+                        pcall(addRspyLog, "C>S", name, path, args)
+                    end
+                end)
+            end
+        end
+        return table.unpack(result, 1, result.n)
+    end))
+
+    -- Hook UnreliableRemoteEvent.FireServer kalau available
+    if origUnreliable then
+        hookfunction(origUnreliable, newcclosure(function(self, ...)
+            local result = table.pack(origUnreliable(self, ...))
+            if not paused then
+                local args = {...}
+                local name = self.Name
+                local ok, path = pcall(function() return self:GetFullName() end)
+                if ok then
+                    task.defer(function()
+                        if not paused then
+                            pcall(addRspyLog, "C>S", name, path, args)
+                        end
+                    end)
+                end
+            end
+            return table.unpack(result, 1, result.n)
+        end))
     end
 
-    for _,v in pairs(game:GetDescendants()) do
-        pcall(hookRemote, v)
+    -- S>C via OnClientEvent — safe, tak perlu hook
+    local function connectRE(v)
+        if v:IsA("RemoteEvent") or (dummyURE and v:IsA("UnreliableRemoteEvent")) then
+            v.OnClientEvent:Connect(function(...)
+                if paused then return end
+                local args = {...}
+                local path = ""
+                pcall(function() path = v:GetFullName() end)
+                task.defer(function()
+                    if not paused then
+                        pcall(addRspyLog, "S>C", v.Name, path, args)
+                    end
+                end)
+            end)
+        end
     end
 
+    for _,v in pairs(game:GetDescendants()) do pcall(connectRE, v) end
     game.DescendantAdded:Connect(function(v)
         task.wait()
-        pcall(hookRemote, v)
+        pcall(connectRE, v)
     end)
 
     addConLog("Hook aktif! Semua remote dimonitor.", C.green, "[sys]")
-    addConLog("Safe mode: per-remote hook (no __namecall)", C.dim, "[sys]")
+    addConLog("Mode: prototype hookfunction (SimpleSpy style)", C.dim, "[sys]")
 end
 
 startHook()
