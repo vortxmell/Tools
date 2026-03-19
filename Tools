@@ -9,6 +9,25 @@ local UIS     = game:GetService("UserInputService")
 local lp      = Players.LocalPlayer
 local pgui    = lp.PlayerGui
 
+-- CoreGui lebih selamat dari PlayerGui — anti-cheat jarang scan CoreGui
+-- Fallback ke PlayerGui kalau CoreGui tak accessible
+local guiParent = game:GetService("CoreGui")
+if not pcall(function() game:GetService("CoreGui"):FindFirstChild("test") end) then
+    guiParent = pgui
+end
+
+-- Randomize GUI name supaya anti-cheat tak detect by name
+local function randomString(len)
+    local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    local result = {}
+    for i = 1, len do
+        local idx = math.random(1, #chars)
+        result[i] = chars:sub(idx, idx)
+    end
+    return table.concat(result)
+end
+local GUI_NAME = randomString(12)
+
 -- ================================================
 -- CLIPBOARD
 -- ================================================
@@ -85,18 +104,20 @@ local C = {
 -- ================================================
 -- DESTROY EXISTING
 -- ================================================
-local ex = pgui:FindFirstChild("HubTools")
+-- Destroy existing instance kalau ada (check both CoreGui and PlayerGui)
+local ex = guiParent:FindFirstChild(GUI_NAME)
+    or pgui:FindFirstChild(GUI_NAME)
 if ex then ex:Destroy() end
 
 -- ================================================
 -- GUI ROOT
 -- ================================================
 local gui = Instance.new("ScreenGui")
-gui.Name             = "HubTools"
+gui.Name             = GUI_NAME
 gui.ResetOnSpawn     = false
 gui.ZIndexBehavior   = Enum.ZIndexBehavior.Global
 gui.DisplayOrder     = 999
-gui.Parent           = pgui
+gui.Parent           = guiParent
 
 -- ================================================
 -- UI BUILDERS
@@ -332,7 +353,19 @@ minBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
+closeBtn.MouseButton1Click:Connect(function()
+    -- Clear _G exports supaya tak tinggal trace
+    _G.log          = nil
+    _G.consoleLogs  = nil
+    _G.consoleClear = nil
+    _G.getSelectedLog = nil
+    _G.testReplay   = nil
+    -- Restore print/warn
+    print = _print
+    warn  = _warn
+    paused = true
+    gui:Destroy()
+end)
 
 -- ================================================
 -- ===== CONSOLE TAB =====
@@ -1559,16 +1592,25 @@ end
 
 -- ================================================
 -- OVERRIDE print / warn
+-- checkcaller() — kalau game script yang call print/warn,
+-- guna original supaya game behavior tak terjejas
 -- ================================================
 local _print = print
 local _warn  = warn
 
 print = function(...)
+    -- Kalau game script yang call, guna original je
+    if checkcaller and checkcaller() then
+        return _print(...)
+    end
     local p={}; for _,v in ipairs({...}) do table.insert(p,tostring(v)) end
     local msg=table.concat(p,"  "); _print(msg); addConLog(msg,C.white,"[print]")
 end
 
 warn = function(...)
+    if checkcaller and checkcaller() then
+        return _warn(...)
+    end
     local p={}; for _,v in ipairs({...}) do table.insert(p,tostring(v)) end
     addConLog(table.concat(p,"  "),C.orange,"[warn]")
 end
