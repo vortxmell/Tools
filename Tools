@@ -171,8 +171,8 @@ end
 -- Title(23) + Tab(26) = 49px total header
 -- W +30%, H -7%
 -- ================================================
-local WIN_W, WIN_H = 468, 391   -- W: 360*1.3=468, H: 420*0.93=391
-local MIN_W, MIN_H = 300, 260
+local WIN_W, WIN_H = 398, 332   -- -15% dari 468x391
+local MIN_W, MIN_H = 260, 220
 local TITLE_H = 23              -- 26 * 0.9 = ~23
 local TAB_H   = 26
 local HEADER_H = TITLE_H + TAB_H  -- 49
@@ -226,9 +226,9 @@ local titleBar = mkFrame(mainWin,
     C.gold, 8)
 
 mkLabel(titleBar, "🔧  Hub Tools",
-    UDim2.new(1,-70,1,0),
-    UDim2.new(0,8,0,0),
-    C.bg, 12, Enum.Font.GothamBold)
+    UDim2.new(1,0,1,0),
+    UDim2.new(0,0,0,0),
+    C.bg, 12, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
 
 local minBtn = mkBtn(titleBar, "—",
     UDim2.new(0,22,0,18),
