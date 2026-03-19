@@ -863,42 +863,38 @@ local function addRspyLog(dir, name, path, args)
     local dirColor = dir=="C>S" and C.orange
         or dir=="S>C" and C.blue or C.purple
 
+    -- Row height 34 — 2 line layout
     local row = mkFrame(rspyScroll,
-        UDim2.new(1,-4,0,28),nil,C.panel,3)
+        UDim2.new(1,-4,0,34),nil,C.panel,3)
     row.LayoutOrder = -os.clock()*1000
 
+    -- LINE 1: [dir tag] [buf tag?] [name] ... [x count] [interval badge]
+    -- Dir tag
     local dtag = mkFrame(row,
-        UDim2.new(0,30,0,16),UDim2.new(0,3,0,6),dirColor,3)
+        UDim2.new(0,28,0,14),UDim2.new(0,3,0,2),dirColor,3)
     mkLabel(dtag,dir,
         UDim2.new(1,0,1,0),nil,
-        C.bg,9,Enum.Font.GothamBold,Enum.TextXAlignment.Center)
+        C.bg,8,Enum.Font.GothamBold,Enum.TextXAlignment.Center)
 
+    -- Buf tag (optional)
+    local nameX = 34
     if isBuf then
         local btag = mkFrame(row,
-            UDim2.new(0,22,0,13),UDim2.new(0,36,0,8),C.purple,3)
+            UDim2.new(0,20,0,12),UDim2.new(0,34,0,3),C.purple,3)
         mkLabel(btag,"buf",
             UDim2.new(1,0,1,0),nil,
-            C.white,8,Enum.Font.GothamBold,Enum.TextXAlignment.Center)
+            C.white,7,Enum.Font.GothamBold,Enum.TextXAlignment.Center)
+        nameX = 57
     end
 
-    local nx = isBuf and 62 or 36
-    mkLabel(row,name,
-        UDim2.new(0,110,0,14),UDim2.new(0,nx,0,2),
-        C.goldText,11,Enum.Font.GothamBold)
-    mkLabel(row,argsStr,
-        UDim2.new(1,-nx-118,0,13),
-        UDim2.new(0,nx+112,0,4),
-        C.dim,10,Enum.Font.Code)
-
-    -- Bottom right: timestamp + count + interval
-    local intervalStr = intervalMs and ("+"..(
+    -- Interval badge (kanan atas)
+    local intervalStr = intervalMs and (
         intervalMs >= 1000
-        and string.format("%.1fs", intervalMs/1000)
-        or intervalMs.."ms"
-    )) or "first"
+        and string.format("+%.1fs", intervalMs/1000)
+        or "+"..intervalMs.."ms"
+    ) or "new"
 
-    -- Colour code: hijau = normal, orange = laju (<100ms), merah = sangat laju (<50ms)
-    local intervalColor = C.dimDark
+    local intervalColor = C.dim
     if intervalMs then
         if intervalMs < 50 then
             intervalColor = C.red
@@ -909,12 +905,27 @@ local function addRspyLog(dir, name, path, args)
         end
     end
 
-    mkLabel(row, ts.." x"..remoteCount[path],
-        UDim2.new(0,50,0,12), UDim2.new(1,-105,0,2),
-        C.dimDark, 9)
-    mkLabel(row, intervalStr,
-        UDim2.new(0,52,0,12), UDim2.new(1,-53,0,2),
-        intervalColor, 9, Enum.Font.GothamBold)
+    -- Interval badge background
+    local ibadge = mkFrame(row,
+        UDim2.new(0,54,0,14),UDim2.new(1,-57,0,2),C.panelDark,3)
+    mkLabel(ibadge, intervalStr,
+        UDim2.new(1,0,1,0),nil,
+        intervalColor,9,Enum.Font.GothamBold,Enum.TextXAlignment.Center)
+
+    -- Count label kiri ibadge
+    mkLabel(row,"x"..remoteCount[path],
+        UDim2.new(0,24,0,14),UDim2.new(1,-83,0,2),
+        C.dimDark,9,Enum.Font.Gotham,Enum.TextXAlignment.Right)
+
+    -- Remote name (line 1, potong kalau panjang)
+    mkLabel(row,name,
+        UDim2.new(1,-nameX-90,0,14),UDim2.new(0,nameX,0,2),
+        C.goldText,11,Enum.Font.GothamBold)
+
+    -- LINE 2: args preview (penuh width)
+    mkLabel(row,argsStr,
+        UDim2.new(1,-8,0,13),UDim2.new(0,4,0,18),
+        C.dim,9,Enum.Font.Code)
 
     local rb = Instance.new("TextButton")
     rb.Size = UDim2.new(1,0,1,0)
@@ -1044,8 +1055,9 @@ exportBtn.MouseButton1Click:Connect(function()
 
     table.insert(lines, "=== ALL LOGS ===")
     for _, entry in ipairs(remoteLogs) do
-        table.insert(lines, string.format("[%s][%s] %s | %s",
-            entry.time, entry.dir, entry.name, entry.argsStr))
+        local iStr = entry.intervalMs and ("+"..entry.intervalMs.."ms") or "new"
+        table.insert(lines, string.format("[%s][%s] %s | %s | %s",
+            entry.time, entry.dir, entry.name, entry.argsStr, iStr))
     end
 
     copyClip(table.concat(lines, "\n"))
@@ -1063,11 +1075,26 @@ exportSelBtn.MouseButton1Click:Connect(function()
 
     local lines = {}
     table.insert(lines, "=== Selected Remote ===")
-    table.insert(lines, "Name: "..selectedLog.name)
-    table.insert(lines, "Path: "..selectedLog.path)
-    table.insert(lines, "Dir:  "..selectedLog.dir)
-    table.insert(lines, "Time: "..selectedLog.time)
-    table.insert(lines, "Args: "..selectedLog.argsStr)
+    table.insert(lines, "Name:     "..selectedLog.name)
+    table.insert(lines, "Path:     "..selectedLog.path)
+    table.insert(lines, "Dir:      "..selectedLog.dir)
+    table.insert(lines, "Time:     "..selectedLog.time)
+    table.insert(lines, "Args:     "..selectedLog.argsStr)
+
+    -- Interval info
+    if selectedLog.intervalMs then
+        local ms = selectedLog.intervalMs
+        local intervalFmt = ms >= 1000
+            and string.format("%.2fs", ms/1000)
+            or ms.."ms"
+        local freqFmt = ms > 0
+            and string.format("~%.1f/s", 1000/ms)
+            or "?"
+        table.insert(lines, "Interval: "..intervalFmt.."  ("..freqFmt..")")
+    else
+        table.insert(lines, "Interval: first fire")
+    end
+
     table.insert(lines, "")
     table.insert(lines, "-- Auto-generated exploit script:")
 
