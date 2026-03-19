@@ -9,12 +9,15 @@ local UIS     = game:GetService("UserInputService")
 local lp      = Players.LocalPlayer
 local pgui    = lp.PlayerGui
 
--- CoreGui lebih selamat dari PlayerGui — anti-cheat jarang scan CoreGui
--- Fallback ke PlayerGui kalau CoreGui tak accessible
-local guiParent = game:GetService("CoreGui")
-if not pcall(function() game:GetService("CoreGui"):FindFirstChild("test") end) then
-    guiParent = pgui
-end
+-- Test CoreGui access — cuba insert dummy frame, kalau fail guna PlayerGui
+local guiParent = pgui  -- default PlayerGui
+pcall(function()
+    local cg = game:GetService("CoreGui")
+    local test = Instance.new("Frame")
+    test.Parent = cg
+    test:Destroy()
+    guiParent = cg  -- CoreGui accessible
+end)
 
 -- Randomize GUI name supaya anti-cheat tak detect by name
 local function randomString(len)
