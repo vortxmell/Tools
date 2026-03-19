@@ -23,6 +23,7 @@ end
 -- ================================================
 local remoteLogs     = {}
 local remoteCount    = {}
+local remoteLastFire = {} -- cooldown tracker: path -> last fire tick
 local paused         = true   -- default stopped, kena tekan Play dulu
 local dirFilter      = "both" -- "both", "cs", "sc"
 local rspyAutoScroll = true
@@ -841,11 +842,20 @@ local function addRspyLog(dir, name, path, args)
     local isBuf   = hasBuffer(args)
     local argsStr = describeArgs(args)
     local ts      = os.date("%M:%S")
+    local now     = os.clock()
+
+    -- Cooldown: kira ms dari last fire remote yang sama
+    local intervalMs = nil
+    if remoteLastFire[path] then
+        intervalMs = math.floor((now - remoteLastFire[path]) * 1000)
+    end
+    remoteLastFire[path] = now
 
     local entry = {
-        dir=dir,name=name,path=path,
-        args=args,argsStr=argsStr,
-        isBuf=isBuf,time=ts
+        dir=dir, name=name, path=path,
+        args=args, argsStr=argsStr,
+        isBuf=isBuf, time=ts,
+        intervalMs=intervalMs  -- nil kalau first fire
     }
     table.insert(remoteLogs,1,entry)
     if #remoteLogs>maxLogs then table.remove(remoteLogs) end
@@ -879,9 +889,32 @@ local function addRspyLog(dir, name, path, args)
         UDim2.new(1,-nx-118,0,13),
         UDim2.new(0,nx+112,0,4),
         C.dim,10,Enum.Font.Code)
-    mkLabel(row,ts.." x"..remoteCount[path],
-        UDim2.new(0,65,0,12),UDim2.new(1,-67,0,4),
-        C.dimDark,9)
+
+    -- Bottom right: timestamp + count + interval
+    local intervalStr = intervalMs and ("+"..(
+        intervalMs >= 1000
+        and string.format("%.1fs", intervalMs/1000)
+        or intervalMs.."ms"
+    )) or "first"
+
+    -- Colour code: hijau = normal, orange = laju (<100ms), merah = sangat laju (<50ms)
+    local intervalColor = C.dimDark
+    if intervalMs then
+        if intervalMs < 50 then
+            intervalColor = C.red
+        elseif intervalMs < 100 then
+            intervalColor = C.orange
+        else
+            intervalColor = C.green
+        end
+    end
+
+    mkLabel(row, ts.." x"..remoteCount[path],
+        UDim2.new(0,50,0,12), UDim2.new(1,-105,0,2),
+        C.dimDark, 9)
+    mkLabel(row, intervalStr,
+        UDim2.new(0,52,0,12), UDim2.new(1,-53,0,2),
+        intervalColor, 9, Enum.Font.GothamBold)
 
     local rb = Instance.new("TextButton")
     rb.Size = UDim2.new(1,0,1,0)
@@ -890,9 +923,14 @@ local function addRspyLog(dir, name, path, args)
     rb.Parent = row
     rb.MouseButton1Click:Connect(function()
         selectedLog = entry
+        local cooldownStr = entry.intervalMs and (
+            entry.intervalMs >= 1000
+            and string.format("%.2fs", entry.intervalMs/1000)
+            or entry.intervalMs.."ms"
+        ) or "first fire"
         detailLabel.Text = string.format(
-            "[%s] %s\n%s\n\nPath:\n%s\n\nArgs:\n%s",
-            dir, name, ts, path, argsStr)
+            "[%s] %s\n%s\n\nPath:\n%s\n\nArgs:\n%s\n\nInterval: %s",
+            dir, name, ts, path, argsStr, cooldownStr)
         for _,c in pairs(rspyScroll:GetChildren()) do
             if c:IsA("Frame") then c.BackgroundColor3=C.panel end
         end
@@ -928,6 +966,7 @@ end)
 clearRspyBtn.MouseButton1Click:Connect(function()
     remoteLogs = {}
     remoteCount = {}
+    remoteLastFire = {}  -- reset cooldown tracker
     for _,c in pairs(rspyScroll:GetChildren()) do
         if c:IsA("Frame") then c:Destroy() end
     end
