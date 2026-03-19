@@ -68,7 +68,7 @@ if ex then ex:Destroy() end
 local gui = Instance.new("ScreenGui")
 gui.Name = "HubTools"
 gui.ResetOnSpawn = false
-gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
 gui.DisplayOrder = 999
 gui.Parent = pgui
 
@@ -770,6 +770,7 @@ local argsEditorFrame = mkFrame(rightPanel,
     UDim2.new(0,4,0.27,0),
     C.bg, 4)
 mkStroke(argsEditorFrame, C.gold, 1)
+argsEditorFrame.ZIndex = 2
 
 local argsEditor = Instance.new("TextBox")
 argsEditor.Size = UDim2.new(1,-8,1,-8)
@@ -786,6 +787,7 @@ argsEditor.TextYAlignment = Enum.TextYAlignment.Top
 argsEditor.MultiLine = true
 argsEditor.ClearTextOnFocus = false
 argsEditor.TextWrapped = false
+argsEditor.ZIndex = 2
 argsEditor.Parent = argsEditorFrame
 
 -- Section 3: Action buttons — Replay + Spam toggle (62%-72%)
@@ -794,14 +796,17 @@ local actionBar = mkFrame(rightPanel,
     UDim2.new(0,4,0.62,0),
     C.bg, 4)
 actionBar.ClipsDescendants = false
+actionBar.ZIndex = 5
 
 local replayBtn = mkBtn(actionBar, "▶ Replay Once",
     UDim2.new(0.5,-3,1,-4), UDim2.new(0,2,0,2),
     C.green, C.bg, 11)
+replayBtn.ZIndex = 6
 
 local spamToggleBtn = mkBtn(actionBar, "⏱ Spam",
     UDim2.new(0.5,-3,1,-4), UDim2.new(0.5,1,0,2),
     C.gold, C.bg, 11)
+spamToggleBtn.ZIndex = 6
 
 -- Section 4: Spam panel (74%-100%, hidden by default)
 local spamPanel = mkFrame(rightPanel,
@@ -1531,6 +1536,29 @@ _G.consoleClear = function()
         if c:IsA("Frame") then c:Destroy() end
     end
     conCount.Text = "0 lines"
+end
+-- Debug exports — boleh check dari console
+_G.getSelectedLog = function() return selectedLog end
+_G.testReplay = function()
+    if not selectedLog then
+        print("selectedLog nil!")
+        return
+    end
+    print("selectedLog:", selectedLog.name, selectedLog.path)
+    local parts = {}
+    for p in selectedLog.path:gmatch("[^%.]+") do
+        table.insert(parts, p)
+    end
+    local obj = game:GetService(parts[1])
+    for i = 2, #parts do
+        obj = obj:FindFirstChild(parts[i])
+    end
+    if obj then
+        local ok, err = pcall(function() obj:FireServer("PlayerStepAdd") end)
+        print("fire:", ok, err)
+    else
+        print("remote not found!")
+    end
 end
 
 local _print = print
