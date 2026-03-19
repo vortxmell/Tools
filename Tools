@@ -1208,8 +1208,8 @@ local function addRspyLog(dir, name, path, args, returnVal, remoteClass)
     local ibadge = mkFrame(row,UDim2.new(0,54,0,14),UDim2.new(1,-57,0,2),C.panelDark,3)
     mkLabel(ibadge,iStr,UDim2.new(1,0,1,0),nil,iColor,9,Enum.Font.GothamBold,Enum.TextXAlignment.Center)
 
-    mkLabel(row,"x"..remoteCount[path],UDim2.new(0,24,0,14),UDim2.new(1,-83,0,2),C.dimDark,9,Enum.Font.Gotham,Enum.TextXAlignment.Right)
-    mkLabel(row,ts,UDim2.new(0,32,0,12),UDim2.new(1,-83,0,18),C.dimDark,8,Enum.Font.Gotham,Enum.TextXAlignment.Right)
+    mkLabel(row,"x"..remoteCount[path],UDim2.new(0,24,0,14),UDim2.new(1,-83,0,2),C.white,9,Enum.Font.Gotham,Enum.TextXAlignment.Right)
+    mkLabel(row,ts,UDim2.new(0,32,0,12),UDim2.new(1,-83,0,18),C.white,8,Enum.Font.Gotham,Enum.TextXAlignment.Right)
     mkLabel(row,name,UDim2.new(1,-nameX-90,0,14),UDim2.new(0,nameX,0,2),C.goldText,11,Enum.Font.GothamBold)
     mkLabel(row,argsStr,UDim2.new(1,-8,0,13),UDim2.new(0,4,0,18),C.white,9,Enum.Font.Code)
 
