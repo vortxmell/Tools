@@ -171,7 +171,7 @@ end
 -- Title(23) + Tab(26) = 49px total header
 -- W +30%, H -7%
 -- ================================================
-local WIN_W, WIN_H = 560, 380   -- W: 398*1.4=557, H: 332*1.2=398
+local WIN_W, WIN_H = 560, 350   -- W: 398*1.4=557, H: 332*1.2=398
 local MIN_W, MIN_H = 320, 260
 local TITLE_H = 23              -- 26 * 0.9 = ~23
 local TAB_H   = 26
