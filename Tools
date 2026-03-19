@@ -1137,50 +1137,37 @@ end
 local function fireRemote(log, args)
     if not log then return false, "No remote selected" end
 
-    -- Walk path terus tanpa pcall scope issue
+    -- Guna loadstring approach — exactly macam manual fire yang confirmed work
+    local argParts = {}
+    for _, v in ipairs(args) do
+        local t = type(v)
+        if t == "string" then
+            table.insert(argParts, string.format("%q", v))
+        elseif t == "number" or t == "boolean" then
+            table.insert(argParts, tostring(v))
+        else
+            table.insert(argParts, string.format("%q", tostring(v)))
+        end
+    end
+
+    -- Build path chain
     local parts = {}
     for p in log.path:gmatch("[^%.]+") do
         table.insert(parts, p)
     end
-
-    local obj
-    local walkOk, walkErr = pcall(function()
-        obj = game:GetService(parts[1])
-        for i = 2, #parts do
-            local child = obj:FindFirstChild(parts[i])
-            if not child then
-                -- Cuba WaitForChild sekali dengan timeout pendek
-                child = obj:WaitForChild(parts[i], 2)
-            end
-            if not child then
-                error("Cannot find: "..parts[i])
-            end
-            obj = child
-        end
-    end)
-
-    if not walkOk or not obj then
-        return false, tostring(walkErr)
+    local chain = 'game:GetService("' .. parts[1] .. '")'
+    for i = 2, #parts do
+        chain = chain .. ':WaitForChild("' .. parts[i] .. '")'
     end
 
-    -- Fire terus, unpack args
-    local fireOk, fireErr = pcall(function()
-        if #args == 0 then
-            obj:FireServer()
-        elseif #args == 1 then
-            obj:FireServer(args[1])
-        elseif #args == 2 then
-            obj:FireServer(args[1], args[2])
-        elseif #args == 3 then
-            obj:FireServer(args[1], args[2], args[3])
-        elseif #args == 4 then
-            obj:FireServer(args[1], args[2], args[3], args[4])
-        else
-            obj:FireServer(table.unpack(args))
-        end
-    end)
+    local argStr = table.concat(argParts, ", ")
+    local code = chain .. ':FireServer(' .. argStr .. ')'
 
-    return fireOk, fireErr
+    local fn, err = loadstring(code)
+    if not fn then return false, "loadstring error: "..tostring(err) end
+
+    local ok, ferr = pcall(fn)
+    return ok, ferr
 end
 
 -- Spam state
