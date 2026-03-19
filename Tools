@@ -18,21 +18,8 @@ local _UIS     = _cloneref(UIS)
 local _lp      = _cloneref(lp)
 local _pgui    = _cloneref(pgui)
 
--- ── gethui() — hidden UI container ──
--- Game scripts tak boleh detect, access, atau destroy GUI dalam gethui()
--- Lebih selamat dari PlayerGui dan CoreGui
-local guiParent
-if gethui then
-    guiParent = gethui()  -- Delta hidden UI — paling selamat
-elseif pcall(function()
-    local test = Instance.new("Frame")
-    test.Parent = game:GetService("CoreGui")
-    test:Destroy()
-end) then
-    guiParent = game:GetService("CoreGui")  -- fallback CoreGui
-else
-    guiParent = _pgui  -- last resort PlayerGui
-end
+-- guiParent — guna pgui, random name cukup untuk hide dari scan
+local guiParent = _pgui
 
 -- Randomize GUI name supaya anti-cheat tak detect by name
 local function randomString(len)
