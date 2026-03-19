@@ -8,16 +8,7 @@ local RS      = game:GetService("ReplicatedStorage")
 local UIS     = game:GetService("UserInputService")
 local lp      = Players.LocalPlayer
 local pgui    = lp.PlayerGui
-
--- Test CoreGui access — cuba insert dummy frame, kalau fail guna PlayerGui
-local guiParent = pgui  -- default PlayerGui
-pcall(function()
-    local cg = game:GetService("CoreGui")
-    local test = Instance.new("Frame")
-    test.Parent = cg
-    test:Destroy()
-    guiParent = cg  -- CoreGui accessible
-end)
+local guiParent = pgui
 
 -- Randomize GUI name supaya anti-cheat tak detect by name
 local function randomString(len)
