@@ -1017,6 +1017,7 @@ exportSelBtn.MouseButton1Click:Connect(function()
         task.delay(1.5, function() exportSelBtn.Text = "📤 Export Selected" end)
         return
     end
+
     local lines = {}
     table.insert(lines, "=== Selected Remote ===")
     table.insert(lines, "Name: "..selectedLog.name)
@@ -1026,20 +1027,69 @@ exportSelBtn.MouseButton1Click:Connect(function()
     table.insert(lines, "Args: "..selectedLog.argsStr)
     table.insert(lines, "")
     table.insert(lines, "-- Auto-generated exploit script:")
-    table.insert(lines, "local RS = game:GetService('ReplicatedStorage')")
-    table.insert(lines, string.format("local remote = RS:FindFirstChild('%s', true)", selectedLog.name))
-    table.insert(lines, "if remote then")
-    if selectedLog.dir == "C>S" then
-        table.insert(lines, "    remote:FireServer() -- add args if needed")
-    else
-        table.insert(lines, "    -- S>C remote, server controls this")
-        table.insert(lines, "    remote.OnClientEvent:Connect(function(...) print(...) end)")
+
+    -- Build WaitForChild chain dari full path
+    -- contoh: "ReplicatedStorage.Packages.EventBus.RemoteEvent"
+    local function buildChain(path)
+        local parts = {}
+        for part in path:gmatch("[^%.]+") do
+            table.insert(parts, part)
+        end
+        if #parts == 0 then return nil end
+        local chain = string.format('game:GetService("%s")', parts[1])
+        for i = 2, #parts do
+            chain = chain .. string.format(':WaitForChild("%s")', parts[i])
+        end
+        return chain
     end
-    table.insert(lines, "end")
+
+    -- Build args table lines
+    local function buildArgsLines(args)
+        if not args or #args == 0 then return nil end
+        local out = {}
+        for _, v in ipairs(args) do
+            local t = type(v)
+            if t == "string" then
+                table.insert(out, string.format('\t"%s"', v:gsub('"', '\\"')))
+            elseif t == "number" or t == "boolean" then
+                table.insert(out, "\t"..tostring(v))
+            elseif t == "buffer" then
+                table.insert(out, "\t-- <buffer> semak Hex panel")
+            else
+                table.insert(out, "\t-- "..tostring(v))
+            end
+        end
+        return out
+    end
+
+    local chain = buildChain(selectedLog.path)
+    local argLines = buildArgsLines(selectedLog.args)
+
+    if chain then
+        if selectedLog.dir == "C>S" then
+            if argLines and #argLines > 0 then
+                table.insert(lines, "local args = {")
+                for _, al in ipairs(argLines) do
+                    table.insert(lines, al..",")
+                end
+                table.insert(lines, "}")
+                table.insert(lines, chain..":FireServer(unpack(args))")
+            else
+                table.insert(lines, chain..":FireServer()")
+            end
+        else
+            table.insert(lines, "-- S>C remote, server yang fire")
+            table.insert(lines, chain..":OnClientEvent:Connect(function(...)")
+            table.insert(lines, "\tprint(...)")
+            table.insert(lines, "end)")
+        end
+    end
+
     if selectedLog.isBuf then
         table.insert(lines, "")
         table.insert(lines, getHexFull(selectedLog.args))
     end
+
     copyClip(table.concat(lines, "\n"))
     exportSelBtn.Text = "✓ Copied!"
     task.delay(2, function() exportSelBtn.Text = "📤 Export Selected" end)
