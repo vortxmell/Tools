@@ -596,24 +596,24 @@ mkStroke(leftPanel, C.gold)
 
 -- Live / Saved toggle bar atas scroll
 local viewToggleBar = mkFrame(leftPanel,
-    UDim2.new(1,0,0,22), UDim2.new(0,0,0,0), C.panelDark, 0)
+    UDim2.new(1,0,0,14), UDim2.new(0,0,0,0), C.panelDark, 0)
 
 local liveTogBtn = mkBtn(viewToggleBar, "● Live",
     UDim2.new(0.5,0,1,-2), UDim2.new(0,0,0,1),
-    C.orange, C.bg, 10)
+    C.orange, C.bg, 9)
 liveTogBtn.Font = Enum.Font.GothamBold
 
 local savedTogBtn = mkBtn(viewToggleBar, "★ Saved",
     UDim2.new(0.5,0,1,-2), UDim2.new(0.5,0,0,1),
-    C.dimDark, C.goldText, 10)
+    C.dimDark, C.goldText, 9)
 
 -- Live scroll
 local rspyScroll = mkScroll(leftPanel,
-    UDim2.new(1,0,1,-22), UDim2.new(0,0,0,22))
+    UDim2.new(1,0,1,-14), UDim2.new(0,0,0,14))
 
 -- Saved scroll (hidden by default)
 local savedScroll = mkScroll(leftPanel,
-    UDim2.new(1,0,1,-22), UDim2.new(0,0,0,22))
+    UDim2.new(1,0,1,-14), UDim2.new(0,0,0,14))
 savedScroll.Visible = false
 
 local leftBottomBar = mkFrame(rspyContent,
