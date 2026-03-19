@@ -25,6 +25,7 @@ local remoteLogs     = {}
 local remoteCount    = {}
 local blockedRemotes = {}
 local paused         = true   -- default stopped, kena tekan Play dulu
+local dirFilter      = "both" -- "both", "cs", "sc"
 local rspyAutoScroll = true
 local conAutoScroll  = true
 local hookOrig       = nil
@@ -669,17 +670,29 @@ local rspyToolbar = mkFrame(rspyContent,
     C.panelDark, 5)
 
 local pauseBtn = mkBtn(rspyToolbar, "▶ Play",
-    UDim2.new(0,72,1,-4), UDim2.new(0,2,0,2),
+    UDim2.new(0,62,1,-4), UDim2.new(0,2,0,2),
     C.green, C.bg, 11)
 local clearRspyBtn = mkBtn(rspyToolbar, "🗑 Clear",
-    UDim2.new(0,62,1,-4), UDim2.new(0,78,0,2),
+    UDim2.new(0,54,1,-4), UDim2.new(0,68,0,2),
     C.red, C.white, 11)
 local asRspyBtn = mkBtn(rspyToolbar, "↓ Auto",
-    UDim2.new(0,58,1,-4), UDim2.new(0,144,0,2),
+    UDim2.new(0,50,1,-4), UDim2.new(0,126,0,2),
     C.goldBr, C.bg, 11)
+
+-- Direction filter buttons
+local dirBothBtn = mkBtn(rspyToolbar, "Both",
+    UDim2.new(0,40,1,-4), UDim2.new(0,180,0,2),
+    C.goldBr, C.bg, 10)
+local dirCSBtn = mkBtn(rspyToolbar, "C>S",
+    UDim2.new(0,36,1,-4), UDim2.new(0,224,0,2),
+    C.tabInactive, C.orange, 10)
+local dirSCBtn = mkBtn(rspyToolbar, "S>C",
+    UDim2.new(0,36,1,-4), UDim2.new(0,264,0,2),
+    C.tabInactive, C.blue, 10)
+
 local rspyCount = mkLabel(rspyToolbar, "0 events",
-    UDim2.new(0,90,1,0), UDim2.new(0,207,0,0),
-    C.dim, 11)
+    UDim2.new(0,80,1,0), UDim2.new(0,304,0,0),
+    C.dim, 10)
 
 local rspyStatus = mkLabel(rspyContent, "⏹ Stopped",
     UDim2.new(1,-16,0,16),
@@ -793,6 +806,9 @@ end
 local function addRspyLog(dir, name, path, args)
     if paused then return end
     if blockedRemotes[path] then return end
+    -- Direction filter
+    if dirFilter == "cs" and dir ~= "C>S" then return end
+    if dirFilter == "sc" and dir ~= "S>C" then return end
     local filter = rspySearch.Text:lower()
     if filter~="" and not name:lower():find(filter,1,true) then return end
 
@@ -901,6 +917,33 @@ asRspyBtn.MouseButton1Click:Connect(function()
     asRspyBtn.BackgroundColor3 = rspyAutoScroll and C.goldBr or C.dimDark
     asRspyBtn.TextColor3 = rspyAutoScroll and C.bg or C.goldText
 end)
+
+-- Direction filter handlers
+local function updateDirBtns()
+    dirBothBtn.BackgroundColor3 = dirFilter=="both" and C.goldBr or C.tabInactive
+    dirBothBtn.TextColor3 = dirFilter=="both" and C.bg or C.goldText
+    dirCSBtn.BackgroundColor3 = dirFilter=="cs" and C.orange or C.tabInactive
+    dirCSBtn.TextColor3 = dirFilter=="cs" and C.bg or C.orange
+    dirSCBtn.BackgroundColor3 = dirFilter=="sc" and C.blue or C.tabInactive
+    dirSCBtn.TextColor3 = dirFilter=="sc" and C.bg or C.blue
+end
+
+dirBothBtn.MouseButton1Click:Connect(function()
+    dirFilter = "both"
+    updateDirBtns()
+end)
+
+dirCSBtn.MouseButton1Click:Connect(function()
+    dirFilter = "cs"
+    updateDirBtns()
+end)
+
+dirSCBtn.MouseButton1Click:Connect(function()
+    dirFilter = "sc"
+    updateDirBtns()
+end)
+
+updateDirBtns() -- set default visual
 
 copyHexBtn.MouseButton1Click:Connect(function()
     if not selectedLog then return end
@@ -1018,7 +1061,7 @@ startHook()
 -- ================================================
 setTab("console")
 
-addConLog("Hub Tools v2.4 loaded!", C.green, "[sys]")
-addConLog("rSpy default STOP — tekan Play untuk start", C.dim, "[sys]")
+addConLog("Hub Tools v2.5 loaded!", C.green, "[sys]")
+addConLog("rSpy: Both/C>S/S>C filter tersedia", C.dim, "[sys]")
 addConLog("⛶ Full = fullsize editor", C.dim, "[sys]")
 addConLog("UI naik bila keyboard buka", C.dim, "[sys]")
