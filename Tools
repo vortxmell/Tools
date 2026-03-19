@@ -53,6 +53,8 @@ local selectedLog    = nil
 local activeTab      = "console"
 local editorFullsize = false
 local sharedCode     = ""
+local savedLogs      = {}   -- persistent saved logs
+local viewMode       = "live" -- "live" or "saved"
 
 -- rSpy
 local rspyVisible    = false
@@ -592,7 +594,27 @@ local leftPanel = mkFrame(rspyContent,
     UDim2.new(0,8,0,SPLIT_TOP), C.panelDark, 5)
 mkStroke(leftPanel, C.gold)
 
-local rspyScroll = mkScroll(leftPanel, UDim2.new(1,0,1,0), UDim2.new(0,0,0,0))
+-- Live / Saved toggle bar atas scroll
+local viewToggleBar = mkFrame(leftPanel,
+    UDim2.new(1,0,0,22), UDim2.new(0,0,0,0), C.panelDark, 0)
+
+local liveTogBtn = mkBtn(viewToggleBar, "● Live",
+    UDim2.new(0.5,0,1,-2), UDim2.new(0,0,0,1),
+    C.orange, C.bg, 10)
+liveTogBtn.Font = Enum.Font.GothamBold
+
+local savedTogBtn = mkBtn(viewToggleBar, "★ Saved",
+    UDim2.new(0.5,0,1,-2), UDim2.new(0.5,0,0,1),
+    C.dimDark, C.goldText, 10)
+
+-- Live scroll
+local rspyScroll = mkScroll(leftPanel,
+    UDim2.new(1,0,1,-22), UDim2.new(0,0,0,22))
+
+-- Saved scroll (hidden by default)
+local savedScroll = mkScroll(leftPanel,
+    UDim2.new(1,0,1,-22), UDim2.new(0,0,0,22))
+savedScroll.Visible = false
 
 local leftBottomBar = mkFrame(rspyContent,
     UDim2.new(0.5,-8-GAP,0,SPLIT_BOT-4),
@@ -753,8 +775,10 @@ spamCountLabel.ZIndex = 11
 local rightBottomBar = mkFrame(rspyContent,
     UDim2.new(0.5,-8,0,SPLIT_BOT-4),
     UDim2.new(0.5,GAP,1,-SPLIT_BOT), C.panelDark, 5)
-local exportSelBtn  = mkBtn(rightBottomBar,"📤 Export",     UDim2.new(0.5,-6,1,-4),UDim2.new(0,4,0,2),  C.goldBr,C.bg,11)
-local copyScriptBtn = mkBtn(rightBottomBar,"📋 Copy Script",UDim2.new(0.5,-6,1,-4),UDim2.new(0.5,2,0,2),C.gold,C.bg,11)
+
+local saveLogBtn    = mkBtn(rightBottomBar,"★ Save",        UDim2.new(0,52,1,-4), UDim2.new(0,4,0,2),   Color3.fromRGB(180,140,0),C.bg,11)
+local exportSelBtn  = mkBtn(rightBottomBar,"📤 Export",     UDim2.new(0,62,1,-4), UDim2.new(0,60,0,2),  C.goldBr,C.bg,11)
+local copyScriptBtn = mkBtn(rightBottomBar,"📋 Copy Script",UDim2.new(1,-130,1,-4),UDim2.new(0,126,0,2),C.gold,C.bg,11)
 
 -- ================================================
 -- MESSAGEPACK DECODER
@@ -1292,8 +1316,128 @@ dirSCBtn.MouseButton1Click:Connect(function()   dirFilter="sc";   updateDirBtns(
 updateDirBtns()
 
 -- ================================================
--- FILTER PANEL HANDLERS
+-- LIVE / SAVED VIEW TOGGLE
 -- ================================================
+local function setViewMode(mode)
+    viewMode = mode
+    if mode == "live" then
+        rspyScroll.Visible  = true
+        savedScroll.Visible = false
+        liveTogBtn.BackgroundColor3  = C.orange
+        liveTogBtn.TextColor3        = C.bg
+        savedTogBtn.BackgroundColor3 = C.dimDark
+        savedTogBtn.TextColor3       = C.goldText
+    else
+        rspyScroll.Visible  = false
+        savedScroll.Visible = true
+        liveTogBtn.BackgroundColor3  = C.dimDark
+        liveTogBtn.TextColor3        = C.goldText
+        savedTogBtn.BackgroundColor3 = Color3.fromRGB(180,140,0)
+        savedTogBtn.TextColor3       = C.bg
+    end
+end
+
+liveTogBtn.MouseButton1Click:Connect(function() setViewMode("live") end)
+savedTogBtn.MouseButton1Click:Connect(function() setViewMode("saved") end)
+setViewMode("live")  -- default
+
+-- ================================================
+-- SAVED LOGS — add row to savedScroll
+-- ================================================
+local function addSavedRow(entry)
+    local dirColor = entry.dir=="C>S" and C.orange or entry.dir=="S>C" and C.blue or C.purple
+    local rowH = entry.retStr and 48 or 34
+
+    local row = mkFrame(savedScroll, UDim2.new(1,-4,0,rowH), nil, Color3.fromRGB(20,18,5), 3)
+    mkStroke(row, Color3.fromRGB(180,140,0), 1)
+    row.LayoutOrder = #savedLogs
+
+    -- Dir tag
+    local dtag = mkFrame(row,UDim2.new(0,28,0,14),UDim2.new(0,3,0,2),dirColor,3)
+    mkLabel(dtag,entry.dir,UDim2.new(1,0,1,0),nil,C.bg,8,Enum.Font.GothamBold,Enum.TextXAlignment.Center)
+
+    -- Star badge
+    local stag = mkFrame(row,UDim2.new(0,16,0,12),UDim2.new(0,34,0,3),Color3.fromRGB(180,140,0),3)
+    mkLabel(stag,"★",UDim2.new(1,0,1,0),nil,C.bg,7,Enum.Font.GothamBold,Enum.TextXAlignment.Center)
+
+    mkLabel(row,entry.name,UDim2.new(1,-115,0,14),UDim2.new(0,54,0,2),C.goldText,11,Enum.Font.GothamBold)
+    mkLabel(row,entry.argsStr,UDim2.new(1,-8,0,13),UDim2.new(0,4,0,18),C.white,9,Enum.Font.Code)
+    mkLabel(row,entry.time,UDim2.new(0,32,0,12),UDim2.new(1,-83,0,18),C.white,8,Enum.Font.Gotham,Enum.TextXAlignment.Right)
+
+    -- Delete button
+    local delBtn = mkBtn(row,"🗑",UDim2.new(0,22,0,20),UDim2.new(1,-24,0,2),C.red,C.white,10)
+    delBtn.ZIndex = 5
+    delBtn.MouseButton1Click:Connect(function()
+        -- Remove dari savedLogs
+        for i, e in ipairs(savedLogs) do
+            if e == entry then table.remove(savedLogs, i); break end
+        end
+        row:Destroy()
+        savedTogBtn.Text = "★ Saved"..(#savedLogs>0 and " ("..#savedLogs..")" or "")
+    end)
+
+    -- Tap untuk select
+    local rb = Instance.new("TextButton")
+    rb.Size=UDim2.new(1,-26,1,0); rb.Position=UDim2.new(0,0,0,0)
+    rb.BackgroundTransparency=1; rb.Text=""; rb.Parent=row
+    rb.MouseButton1Click:Connect(function()
+        selectedLog = entry
+        local cStr = entry.intervalMs and (entry.intervalMs>=1000
+            and string.format("%.2fs",entry.intervalMs/1000) or entry.intervalMs.."ms") or "saved"
+        local detailText = string.format("[%s] %s  %s\n%s\n\nArgs: %s",
+            entry.dir,entry.name,cStr,entry.path,entry.argsStr)
+        if entry.retStr then detailText=detailText.."\n\n↩ Return:\n"..entry.retStr end
+        detailLabel.Text = detailText
+
+        local edLines={}
+        for _,v in ipairs(entry.args or {}) do
+            local t=type(v)
+            if t=="string" then table.insert(edLines,'"'..v:gsub('"','\\"')..'"')
+            elseif t=="number" or t=="boolean" then table.insert(edLines,tostring(v))
+            elseif t=="buffer" then table.insert(edLines,"-- <buffer>")
+            else table.insert(edLines,"-- "..tostring(v)) end
+        end
+        argsEditor.Text = table.concat(edLines,"\n")
+        if entry.intervalMs and entry.intervalMs>0 then
+            intervalInput.Text = tostring(entry.intervalMs)
+        end
+
+        -- Highlight
+        for _,c in pairs(savedScroll:GetChildren()) do
+            if c:IsA("Frame") then c.BackgroundColor3=Color3.fromRGB(20,18,5) end
+        end
+        row.BackgroundColor3 = C.goldBr
+    end)
+end
+
+-- Save button handler
+saveLogBtn.MouseButton1Click:Connect(function()
+    if not selectedLog then
+        saveLogBtn.Text = "Select first!"
+        task.delay(1.5, function() saveLogBtn.Text = "★ Save" end)
+        return
+    end
+
+    -- Check duplicate
+    for _, e in ipairs(savedLogs) do
+        if e == selectedLog then
+            saveLogBtn.Text = "Already saved!"
+            task.delay(1.5, function() saveLogBtn.Text = "★ Save" end)
+            return
+        end
+    end
+
+    table.insert(savedLogs, selectedLog)
+    addSavedRow(selectedLog)
+
+    -- Update saved button badge count
+    savedTogBtn.Text = "★ Saved ("..#savedLogs..")"
+
+    saveLogBtn.Text = "★ Saved!"
+    task.delay(1.5, function() saveLogBtn.Text = "★ Save" end)
+
+    addConLog("Saved: "..selectedLog.name, Color3.fromRGB(180,140,0),"[save]")
+end)
 local filterPanelOpen = false
 
 filterTogBtn.MouseButton1Click:Connect(function()
@@ -1705,6 +1849,18 @@ _G.bookmark = function(alias)
     end
     alias = alias or selectedLog.name
     bookmarks[alias] = selectedLog
+
+    -- Sync dengan saved logs UI
+    local alreadySaved = false
+    for _, e in ipairs(savedLogs) do
+        if e == selectedLog then alreadySaved = true; break end
+    end
+    if not alreadySaved then
+        table.insert(savedLogs, selectedLog)
+        addSavedRow(selectedLog)
+        savedTogBtn.Text = "★ Saved ("..#savedLogs..")"
+    end
+
     addConLog("Bookmarked: "..alias.." → "..selectedLog.path, C.goldText,"[bm]")
 end
 
