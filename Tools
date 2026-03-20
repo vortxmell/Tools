@@ -796,7 +796,6 @@ dumpSourceBox.TextYAlignment    = Enum.TextYAlignment.Top
 dumpSourceBox.MultiLine         = true
 dumpSourceBox.ClearTextOnFocus  = false
 dumpSourceBox.TextWrapped       = false
-dumpSourceBox.Editable          = false
 dumpSourceBox.Parent            = dumpSourceScroll
 
 -- Right bottom bar
