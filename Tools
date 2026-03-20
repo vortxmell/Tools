@@ -709,6 +709,8 @@ end
 dumperCloseBtn.MouseButton1Click:Connect(function()
     dumperTab.Visible      = false
     dumperCloseBtn.Visible = false
+    tabs["dumper"]         = nil
+    tabContents["dumper"]  = nil
     dumperContent.Visible  = false
     setTab("tools")
 end)
@@ -744,14 +746,17 @@ mkStroke(dumpLeftPanel, C.gold)
 
 local dumpListScroll = mkScroll(dumpLeftPanel, UDim2.new(1,0,1,0), UDim2.new(0,0,0,0))
 
--- Left bottom bar
+-- Left bottom bar — search + export list
 local dumpLeftBot = mkFrame(dumperContent,
     UDim2.new(0.45,-8-DUMP_GAP,0,DUMP_BOT-4),
     UDim2.new(0,8,1,-DUMP_BOT), C.panelDark, 5)
 
 local dumpSearchInput = mkInput(dumpLeftBot,"🔍 Filter scripts...",
-    UDim2.new(1,-8,1,-4), UDim2.new(0,4,0,2))
+    UDim2.new(1,-80,1,-4), UDim2.new(0,4,0,2))
 dumpSearchInput.TextSize = 10
+
+local dumpExportListBtn = mkBtn(dumpLeftBot,"📤 List",
+    UDim2.new(0,68,1,-4), UDim2.new(1,-72,0,2), C.goldBr,C.bg,11)
 
 -- Right panel — source viewer
 local dumpRightPanel = mkFrame(dumperContent,
@@ -796,13 +801,13 @@ dumpSourceBox.ClearTextOnFocus  = false
 dumpSourceBox.TextWrapped       = false
 dumpSourceBox.Parent            = dumpSourceScroll
 
--- Right bottom bar
+-- Right bottom bar — export only (copy removed)
 local dumpRightBot = mkFrame(dumperContent,
     UDim2.new(0.55,-8,0,DUMP_BOT-4),
     UDim2.new(0.45,DUMP_GAP,1,-DUMP_BOT), C.panelDark, 5)
 
-local dumpCopyBtn   = mkBtn(dumpRightBot,"📋 Copy",      UDim2.new(0.5,-6,1,-4),UDim2.new(0,4,0,2),  C.gold,C.bg,11)
-local dumpExportBtn = mkBtn(dumpRightBot,"📤 Export",    UDim2.new(0.5,-6,1,-4),UDim2.new(0.5,2,0,2),C.goldBr,C.bg,11)
+local dumpExportBtn = mkBtn(dumpRightBot,"📤 Export Script",
+    UDim2.new(1,-8,1,-4), UDim2.new(0,4,0,2), C.goldBr,C.bg,11)
 
 -- ================================================
 -- DUMPER LOGIC
@@ -919,54 +924,28 @@ dumpScanBtn.MouseButton1Click:Connect(function()
     task.spawn(function()
         dumpScriptList = {}
 
-        -- Skip Roblox internal paths — tak relevant untuk exploit research
-        local skipPaths = {
-            "CoreGui", "CorePackages", "RobloxGui",
-            "BuiltInPlugins", "BuiltInStandalonePlugins",
-        }
-        local function isInternal(path)
-            for _, s in ipairs(skipPaths) do
-                if path:sub(1, #s) == s then return true end
-            end
-            return false
-        end
-
-        local count = 0
         for _, obj in pairs(game:GetDescendants()) do
             if obj:IsA("LocalScript") or obj:IsA("ModuleScript") then
                 local path = ""
                 pcall(function() path = obj:GetFullName() end)
-
-                -- Skip Roblox internals
-                if not isInternal(path) then
-                    table.insert(dumpScriptList, {
-                        name  = obj.Name,
-                        path  = path,
-                        obj   = obj,
-                        class = obj.ClassName,
-                        source= nil
-                    })
-                end
-
-                count += 1
-                -- Yield setiap 100 supaya tak freeze
-                if count % 100 == 0 then
-                    dumpScriptCount.Text = #dumpScriptList.." found..."
-                    task.wait()
-                end
+                table.insert(dumpScriptList, {
+                    name  = obj.Name,
+                    path  = path,
+                    obj   = obj,
+                    class = obj.ClassName,
+                    source= nil  -- lazy load
+                })
             end
         end
 
         -- Sort by name
-        table.sort(dumpScriptList, function(a,b)
-            return a.name:lower() < b.name:lower()
-        end)
+        table.sort(dumpScriptList, function(a,b) return a.name:lower() < b.name:lower() end)
 
         renderDumpList()
 
         dumpScanBtn.Text             = "🔍 Scan"
         dumpScanBtn.BackgroundColor3 = C.green
-        addConLog("Dumper: "..#dumpScriptList.." scripts (skipped internals)", C.green,"[dump]")
+        addConLog("Dumper: found "..#dumpScriptList.." scripts", C.green,"[dump]")
     end)
 end)
 
@@ -977,23 +956,56 @@ dumpFilterModule.MouseButton1Click:Connect(renderDumpList)
 
 dumpSearchInput:GetPropertyChangedSignal("Text"):Connect(renderDumpList)
 
--- Copy source
-dumpCopyBtn.MouseButton1Click:Connect(function()
-    if not dumpSelected or not dumpSelected.source then
-        dumpCopyBtn.Text = "Select first!"
-        task.delay(1.5, function() dumpCopyBtn.Text = "📋 Copy" end)
+-- Export List — export current filtered list (name + path + type)
+dumpExportListBtn.MouseButton1Click:Connect(function()
+    if #dumpScriptList == 0 then
+        dumpExportListBtn.Text = "Scan first!"
+        task.delay(1.5, function() dumpExportListBtn.Text = "📤 List" end)
         return
     end
-    copyClip(dumpSelected.source)
-    dumpCopyBtn.Text = "✓ Copied!"
-    task.delay(2, function() dumpCopyBtn.Text = "📋 Copy" end)
+
+    local f = dumpSearchInput.Text:lower()
+    local lines = {
+        "=== Script Dumper — List Export ===",
+        "Game:   "..game.Name.." ("..game.PlaceId..")",
+        "Filter: "..dumpFilter..(f~="" and " | search: "..f or ""),
+        "Time:   "..os.date("%Y-%m-%d %H:%M:%S"),
+        string.rep("=", 50),
+        "",
+    }
+
+    local count = 0
+    for _, entry in ipairs(dumpScriptList) do
+        local typeMatch = dumpFilter=="all"
+            or (dumpFilter=="local"  and entry.class=="LocalScript")
+            or (dumpFilter=="module" and entry.class=="ModuleScript")
+        local nameMatch = f=="" or entry.name:lower():find(f,1,true)
+            or entry.path:lower():find(f,1,true)
+
+        if typeMatch and nameMatch then
+            count += 1
+            table.insert(lines, string.format("[%d] [%s] %s",
+                count,
+                entry.class=="LocalScript" and "L" or "M",
+                entry.path))
+        end
+    end
+
+    table.insert(lines, "")
+    table.insert(lines, string.rep("=", 50))
+    table.insert(lines, "Total: "..count.." scripts")
+
+    copyClip(table.concat(lines, "\n"))
+    dumpExportListBtn.Text = "✓ "..count.." copied!"
+    task.delay(2, function() dumpExportListBtn.Text = "📤 List" end)
+    addConLog("Exported list: "..count.." scripts", C.green,"[dump]")
 end)
 
--- Export with metadata
+-- Export selected script with metadata
 dumpExportBtn.MouseButton1Click:Connect(function()
     if not dumpSelected or not dumpSelected.source then
         dumpExportBtn.Text = "Select first!"
-        task.delay(1.5, function() dumpExportBtn.Text = "📤 Export" end)
+        task.delay(1.5, function() dumpExportBtn.Text = "📤 Export Script" end)
         return
     end
     local out = {
@@ -1009,7 +1021,7 @@ dumpExportBtn.MouseButton1Click:Connect(function()
     }
     copyClip(table.concat(out,"\n"))
     dumpExportBtn.Text = "✓ Exported!"
-    task.delay(2, function() dumpExportBtn.Text = "📤 Export" end)
+    task.delay(2, function() dumpExportBtn.Text = "📤 Export Script" end)
 end)
 
 -- ================================================
