@@ -826,19 +826,9 @@ local function updateDumpFilterBtns()
 end
 updateDumpFilterBtns()
 
-dumpFilterAll.MouseButton1Click:Connect(function()
-    dumpFilter="all"; updateDumpFilterBtns(); renderDumpList()
-end)
-dumpFilterLocal.MouseButton1Click:Connect(function()
-    dumpFilter="local"; updateDumpFilterBtns(); renderDumpList()
-end)
-dumpFilterModule.MouseButton1Click:Connect(function()
-    dumpFilter="module"; updateDumpFilterBtns(); renderDumpList()
-end)
-
 -- Render list based on current filter + search
+-- MESTI declare SEBELUM filter button connections
 local function renderDumpList()
-    -- Clear existing rows
     for _,c in pairs(dumpListScroll:GetChildren()) do
         if c:IsA("Frame") then c:Destroy() end
     end
@@ -847,7 +837,6 @@ local function renderDumpList()
     local shown = 0
 
     for i, entry in ipairs(dumpScriptList) do
-        -- Apply filter
         local typeMatch = dumpFilter=="all"
             or (dumpFilter=="local"  and entry.class=="LocalScript")
             or (dumpFilter=="module" and entry.class=="ModuleScript")
@@ -860,7 +849,6 @@ local function renderDumpList()
                 UDim2.new(1,-4,0,34), nil, C.panel, 3)
             row.LayoutOrder = i
 
-            -- Type badge
             local badgeColor = entry.class=="LocalScript" and C.orange or C.blue
             local badgeText  = entry.class=="LocalScript" and "L" or "M"
             local badge = mkFrame(row,
@@ -869,25 +857,21 @@ local function renderDumpList()
                 UDim2.new(1,0,1,0), nil,
                 C.bg, 9, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
 
-            -- Script name
             mkLabel(row, entry.name,
                 UDim2.new(1,-28,0,14), UDim2.new(0,22,0,2),
                 C.goldText, 11, Enum.Font.GothamBold)
 
-            -- Path (truncated)
             local shortPath = entry.path:match("^(.-)%.[^%.]*$") or entry.path
             mkLabel(row, shortPath,
                 UDim2.new(1,-28,0,12), UDim2.new(0,22,0,18),
                 C.dim, 9, Enum.Font.Code)
 
-            -- Click to view
             local rb = Instance.new("TextButton")
             rb.Size = UDim2.new(1,0,1,0)
             rb.BackgroundTransparency = 1
             rb.Text = ""
             rb.Parent = row
             rb.MouseButton1Click:Connect(function()
-                -- Highlight selected
                 for _,c in pairs(dumpListScroll:GetChildren()) do
                     if c:IsA("Frame") then c.BackgroundColor3 = C.panel end
                 end
@@ -898,7 +882,6 @@ local function renderDumpList()
                 dumpSourceBox.Text = "-- Decompiling..."
                 dumpSourceBox.TextColor3 = C.dim
 
-                -- Decompile on-demand
                 task.spawn(function()
                     local src = ""
                     local ok = pcall(function()
@@ -911,16 +894,27 @@ local function renderDumpList()
                         end
                     end)
                     if not ok then src = "-- [decompile error]" end
-                    dumpSourceBox.Text      = src
-                    dumpSourceBox.TextColor3= C.goldText
-                    dumpSelected.source     = src  -- cache
+                    dumpSourceBox.Text       = src
+                    dumpSourceBox.TextColor3 = C.goldText
+                    dumpSelected.source      = src
                 end)
             end)
         end
     end
 
+    -- Count ikut filter yang active
     dumpScriptCount.Text = shown.." scripts"
 end
+
+dumpFilterAll.MouseButton1Click:Connect(function()
+    dumpFilter="all"; updateDumpFilterBtns(); renderDumpList()
+end)
+dumpFilterLocal.MouseButton1Click:Connect(function()
+    dumpFilter="local"; updateDumpFilterBtns(); renderDumpList()
+end)
+dumpFilterModule.MouseButton1Click:Connect(function()
+    dumpFilter="module"; updateDumpFilterBtns(); renderDumpList()
+end)
 
 -- Scan game for scripts (name + path only, no decompile yet)
 dumpScanBtn.MouseButton1Click:Connect(function()
@@ -949,7 +943,7 @@ dumpScanBtn.MouseButton1Click:Connect(function()
         for i, obj in ipairs(all) do
             -- Yield setiap 100 objects
             if i % 100 == 0 then
-                dumpScriptCount.Text = found.." found ("..math.floor(i/total*100).."%)"
+                dumpScriptCount.Text = "Scanning "..math.floor(i/total*100).."%..."
                 task.wait()
             end
 
