@@ -826,9 +826,15 @@ local function updateDumpFilterBtns()
 end
 updateDumpFilterBtns()
 
-dumpFilterAll.MouseButton1Click:Connect(function()    dumpFilter="all";    updateDumpFilterBtns() end)
-dumpFilterLocal.MouseButton1Click:Connect(function()  dumpFilter="local";  updateDumpFilterBtns() end)
-dumpFilterModule.MouseButton1Click:Connect(function() dumpFilter="module"; updateDumpFilterBtns() end)
+dumpFilterAll.MouseButton1Click:Connect(function()
+    dumpFilter="all"; updateDumpFilterBtns(); renderDumpList()
+end)
+dumpFilterLocal.MouseButton1Click:Connect(function()
+    dumpFilter="local"; updateDumpFilterBtns(); renderDumpList()
+end)
+dumpFilterModule.MouseButton1Click:Connect(function()
+    dumpFilter="module"; updateDumpFilterBtns(); renderDumpList()
+end)
 
 -- Render list based on current filter + search
 local function renderDumpList()
@@ -941,8 +947,8 @@ dumpScanBtn.MouseButton1Click:Connect(function()
         local found = 0
 
         for i, obj in ipairs(all) do
-            -- Yield setiap 30 objects — smooth, tak freeze
-            if i % 30 == 0 then
+            -- Yield setiap 100 objects
+            if i % 100 == 0 then
                 dumpScriptCount.Text = found.." found ("..math.floor(i/total*100).."%)"
                 task.wait()
             end
@@ -974,11 +980,6 @@ dumpScanBtn.MouseButton1Click:Connect(function()
         addConLog("Dumper: "..#dumpScriptList.." scripts found", C.green,"[dump]")
     end)
 end)
-
--- Re-render when filter/search changes
-dumpFilterAll.MouseButton1Click:Connect(renderDumpList)
-dumpFilterLocal.MouseButton1Click:Connect(renderDumpList)
-dumpFilterModule.MouseButton1Click:Connect(renderDumpList)
 
 dumpSearchInput:GetPropertyChangedSignal("Text"):Connect(renderDumpList)
 
