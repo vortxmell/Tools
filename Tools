@@ -666,45 +666,328 @@ local customStatus = mkLabel(customCard, "",
     UDim2.new(1,-16,0,14), UDim2.new(0,8,0,66),
     C.dim, 9, Enum.Font.Gotham, Enum.TextXAlignment.Center)
 
+-- Tool 4: Script Dumper — opens dedicated tab
+local dumpCardBtn, _ = mkToolCard(toolsScroll, 258,
+    "📜", "Script Dumper",
+    "Browse & decompile scripts\nLocalScript / ModuleScript viewer",
+    "▶ Open", C.purple)
+
 -- ================================================
--- Tool 4: Script Dumper (built-in)
+-- DUMPER TAB — dynamic tab (boleh close)
 -- ================================================
-local dumpCard = mkFrame(toolsScroll,
-    UDim2.new(1,-16,0,130),
-    UDim2.new(0,8,0,258),
-    C.panelDark, 6)
-mkStroke(dumpCard, C.goldBr, 1.5)
+local dumperContent = mkFrame(mainWin,
+    UDim2.new(1,0,1,-HEADER_H), UDim2.new(0,0,0,HEADER_H), C.bg, 0)
+dumperContent.ClipsDescendants = true
+dumperContent.Visible          = false
 
-mkLabel(dumpCard, "📜",
-    UDim2.new(0,36,0,36), UDim2.new(0,6,0,8),
-    C.goldText, 22, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
+-- Dumper tab button — hidden until opened
+local dumperTab = mkBtn(tabBar, "📜 Dumper",
+    UDim2.new(0,70,1,-4), UDim2.new(0,176,0,2),
+    C.tabInactive, C.dim, 10)
+dumperTab.Visible = false
 
-mkLabel(dumpCard, "Script Dumper",
-    UDim2.new(1,-120,0,18), UDim2.new(0,48,0,8),
-    C.goldText, 12, Enum.Font.GothamBold)
+-- Close button on dumper tab
+local dumperCloseBtn = mkBtn(tabBar, "✕",
+    UDim2.new(0,14,0,14), UDim2.new(0,249,0,6),
+    C.red, C.white, 9)
+dumperCloseBtn.ZIndex  = 5
+dumperCloseBtn.Visible = false
 
-mkLabel(dumpCard, "Dump LocalScripts & ModuleScripts\nCari remote names & game logic",
-    UDim2.new(1,-120,0,28), UDim2.new(0,48,0,26),
-    C.dim, 9)
+tabs["dumper"]        = dumperTab
+tabContents["dumper"] = dumperContent
 
--- Mode selector buttons
-local dumpModeAll = mkBtn(dumpCard, "All Scripts",
-    UDim2.new(0,76,0,20), UDim2.new(0,8,0,58),
-    C.goldBr, C.bg, 10)
-local dumpModeLocal = mkBtn(dumpCard, "LocalScript",
-    UDim2.new(0,72,0,20), UDim2.new(0,88,0,58),
-    C.tabInactive, C.goldText, 10)
-local dumpModeModule = mkBtn(dumpCard, "ModuleScript",
-    UDim2.new(0,80,0,20), UDim2.new(0,164,0,58),
-    C.tabInactive, C.goldText, 10)
+dumperTab.MouseButton1Click:Connect(function() setTab("dumper") end)
 
-local dumpRunBtn = mkBtn(dumpCard, "📤 Dump & Copy",
-    UDim2.new(0,100,0,24), UDim2.new(0,8,0,84),
-    C.green, C.bg, 11)
+-- Open dumper tab
+local function openDumperTab()
+    dumperTab.Visible      = true
+    dumperCloseBtn.Visible = true
+    setTab("dumper")
+end
 
-local dumpStatus = mkLabel(dumpCard, "Ready — pilih mode dan tekan Dump",
-    UDim2.new(1,-16,0,16), UDim2.new(0,8,0,112),
+-- Close dumper tab
+dumperCloseBtn.MouseButton1Click:Connect(function()
+    dumperTab.Visible      = false
+    dumperCloseBtn.Visible = false
+    tabs["dumper"]         = nil
+    tabContents["dumper"]  = nil
+    dumperContent.Visible  = false
+    setTab("tools")
+end)
+
+-- ================================================
+-- DUMPER TAB UI — split panel
+-- Left: script list | Right: source viewer
+-- ================================================
+local DUMP_TOP = 32  -- toolbar height
+local DUMP_BOT = 28  -- bottom bar height
+local DUMP_GAP = 4
+
+-- Toolbar
+local dumpToolbar = mkFrame(dumperContent,
+    UDim2.new(1,-16,0,DUMP_TOP-4), UDim2.new(0,8,0,4), C.panelDark, 5)
+
+-- Filter buttons
+local dumpFilterAll    = mkBtn(dumpToolbar,"All",         UDim2.new(0,34,1,-4),UDim2.new(0,2,0,2),  C.goldBr,C.bg,10)
+local dumpFilterLocal  = mkBtn(dumpToolbar,"LocalScript", UDim2.new(0,72,1,-4),UDim2.new(0,40,0,2), C.tabInactive,C.goldText,10)
+local dumpFilterModule = mkBtn(dumpToolbar,"Module",      UDim2.new(0,54,1,-4),UDim2.new(0,116,0,2),C.tabInactive,C.goldText,10)
+
+local dumpScanBtn = mkBtn(dumpToolbar,"🔍 Scan",
+    UDim2.new(0,60,1,-4), UDim2.new(1,-64,0,2), C.green,C.bg,11)
+
+local dumpScriptCount = mkLabel(dumpToolbar,"0 scripts",
+    UDim2.new(0,60,1,0), UDim2.new(0,174,0,0), C.dim,10)
+
+-- Left panel — script list
+local dumpLeftPanel = mkFrame(dumperContent,
+    UDim2.new(0.45,-8-DUMP_GAP,1,-DUMP_TOP-DUMP_BOT),
+    UDim2.new(0,8,0,DUMP_TOP), C.panelDark, 5)
+mkStroke(dumpLeftPanel, C.gold)
+
+local dumpListScroll = mkScroll(dumpLeftPanel, UDim2.new(1,0,1,0), UDim2.new(0,0,0,0))
+
+-- Left bottom bar
+local dumpLeftBot = mkFrame(dumperContent,
+    UDim2.new(0.45,-8-DUMP_GAP,0,DUMP_BOT-4),
+    UDim2.new(0,8,1,-DUMP_BOT), C.panelDark, 5)
+
+local dumpSearchInput = mkInput(dumpLeftBot,"🔍 Filter scripts...",
+    UDim2.new(1,-8,1,-4), UDim2.new(0,4,0,2))
+dumpSearchInput.TextSize = 10
+
+-- Right panel — source viewer
+local dumpRightPanel = mkFrame(dumperContent,
+    UDim2.new(0.55,-8,1,-DUMP_TOP-DUMP_BOT),
+    UDim2.new(0.45,DUMP_GAP,0,DUMP_TOP), C.panelDark, 5)
+mkStroke(dumpRightPanel, C.goldBr)
+dumpRightPanel.ClipsDescendants = true
+
+-- Source info header (top 20px)
+local dumpInfoLabel = mkLabel(dumpRightPanel,
+    "[ Tap script untuk view ]",
+    UDim2.new(1,-8,0,18), UDim2.new(0,4,0,2),
     C.dim, 9, Enum.Font.Gotham)
+
+-- Source viewer (scrollable textbox)
+local dumpSourceScroll = Instance.new("ScrollingFrame")
+dumpSourceScroll.Size                 = UDim2.new(1,0,1,-22)
+dumpSourceScroll.Position             = UDim2.new(0,0,0,22)
+dumpSourceScroll.BackgroundColor3     = C.bg
+dumpSourceScroll.BorderSizePixel      = 0
+dumpSourceScroll.ScrollBarThickness   = 3
+dumpSourceScroll.ScrollBarImageColor3 = C.gold
+dumpSourceScroll.CanvasSize           = UDim2.new(0,0,0,0)
+dumpSourceScroll.AutomaticCanvasSize  = Enum.AutomaticSize.Y
+dumpSourceScroll.Parent               = dumpRightPanel
+
+local dumpSourceBox = Instance.new("TextBox")
+dumpSourceBox.Size              = UDim2.new(1,-8,0,0)
+dumpSourceBox.Position          = UDim2.new(0,4,0,4)
+dumpSourceBox.AutomaticSize     = Enum.AutomaticSize.Y
+dumpSourceBox.BackgroundTransparency = 1
+dumpSourceBox.Text              = ""
+dumpSourceBox.PlaceholderText   = "-- source akan appear sini"
+dumpSourceBox.TextColor3        = C.goldText
+dumpSourceBox.PlaceholderColor3 = C.dim
+dumpSourceBox.TextSize          = 10
+dumpSourceBox.Font               = Enum.Font.Code
+dumpSourceBox.TextXAlignment    = Enum.TextXAlignment.Left
+dumpSourceBox.TextYAlignment    = Enum.TextYAlignment.Top
+dumpSourceBox.MultiLine         = true
+dumpSourceBox.ClearTextOnFocus  = false
+dumpSourceBox.TextWrapped       = false
+dumpSourceBox.Editable          = false
+dumpSourceBox.Parent            = dumpSourceScroll
+
+-- Right bottom bar
+local dumpRightBot = mkFrame(dumperContent,
+    UDim2.new(0.55,-8,0,DUMP_BOT-4),
+    UDim2.new(0.45,DUMP_GAP,1,-DUMP_BOT), C.panelDark, 5)
+
+local dumpCopyBtn   = mkBtn(dumpRightBot,"📋 Copy",      UDim2.new(0.5,-6,1,-4),UDim2.new(0,4,0,2),  C.gold,C.bg,11)
+local dumpExportBtn = mkBtn(dumpRightBot,"📤 Export",    UDim2.new(0.5,-6,1,-4),UDim2.new(0.5,2,0,2),C.goldBr,C.bg,11)
+
+-- ================================================
+-- DUMPER LOGIC
+-- ================================================
+local dumpFilter      = "all"   -- "all","local","module"
+local dumpScriptList  = {}      -- {name, path, obj, class}
+local dumpSelected    = nil     -- currently selected entry
+
+local function updateDumpFilterBtns()
+    dumpFilterAll.BackgroundColor3    = dumpFilter=="all"    and C.goldBr      or C.tabInactive
+    dumpFilterAll.TextColor3          = dumpFilter=="all"    and C.bg           or C.goldText
+    dumpFilterLocal.BackgroundColor3  = dumpFilter=="local"  and C.orange       or C.tabInactive
+    dumpFilterLocal.TextColor3        = dumpFilter=="local"  and C.bg           or C.goldText
+    dumpFilterModule.BackgroundColor3 = dumpFilter=="module" and C.blue         or C.tabInactive
+    dumpFilterModule.TextColor3       = dumpFilter=="module" and C.bg           or C.goldText
+end
+updateDumpFilterBtns()
+
+dumpFilterAll.MouseButton1Click:Connect(function()    dumpFilter="all";    updateDumpFilterBtns() end)
+dumpFilterLocal.MouseButton1Click:Connect(function()  dumpFilter="local";  updateDumpFilterBtns() end)
+dumpFilterModule.MouseButton1Click:Connect(function() dumpFilter="module"; updateDumpFilterBtns() end)
+
+-- Render list based on current filter + search
+local function renderDumpList()
+    -- Clear existing rows
+    for _,c in pairs(dumpListScroll:GetChildren()) do
+        if c:IsA("Frame") then c:Destroy() end
+    end
+
+    local f = dumpSearchInput.Text:lower()
+    local shown = 0
+
+    for i, entry in ipairs(dumpScriptList) do
+        -- Apply filter
+        local typeMatch = dumpFilter=="all"
+            or (dumpFilter=="local"  and entry.class=="LocalScript")
+            or (dumpFilter=="module" and entry.class=="ModuleScript")
+        local nameMatch = f=="" or entry.name:lower():find(f,1,true)
+            or entry.path:lower():find(f,1,true)
+
+        if typeMatch and nameMatch then
+            shown += 1
+            local row = mkFrame(dumpListScroll,
+                UDim2.new(1,-4,0,34), nil, C.panel, 3)
+            row.LayoutOrder = i
+
+            -- Type badge
+            local badgeColor = entry.class=="LocalScript" and C.orange or C.blue
+            local badgeText  = entry.class=="LocalScript" and "L" or "M"
+            local badge = mkFrame(row,
+                UDim2.new(0,16,0,16), UDim2.new(0,3,0,9), badgeColor, 3)
+            mkLabel(badge, badgeText,
+                UDim2.new(1,0,1,0), nil,
+                C.bg, 9, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
+
+            -- Script name
+            mkLabel(row, entry.name,
+                UDim2.new(1,-28,0,14), UDim2.new(0,22,0,2),
+                C.goldText, 11, Enum.Font.GothamBold)
+
+            -- Path (truncated)
+            local shortPath = entry.path:match("^(.-)%.[^%.]*$") or entry.path
+            mkLabel(row, shortPath,
+                UDim2.new(1,-28,0,12), UDim2.new(0,22,0,18),
+                C.dim, 9, Enum.Font.Code)
+
+            -- Click to view
+            local rb = Instance.new("TextButton")
+            rb.Size = UDim2.new(1,0,1,0)
+            rb.BackgroundTransparency = 1
+            rb.Text = ""
+            rb.Parent = row
+            rb.MouseButton1Click:Connect(function()
+                -- Highlight selected
+                for _,c in pairs(dumpListScroll:GetChildren()) do
+                    if c:IsA("Frame") then c.BackgroundColor3 = C.panel end
+                end
+                row.BackgroundColor3 = C.goldBr
+
+                dumpSelected = entry
+                dumpInfoLabel.Text = entry.name.." | "..entry.class
+                dumpSourceBox.Text = "-- Decompiling..."
+                dumpSourceBox.TextColor3 = C.dim
+
+                -- Decompile on-demand
+                task.spawn(function()
+                    local src = ""
+                    local ok = pcall(function()
+                        if decompile then
+                            src = decompile(entry.obj) or "-- [empty]"
+                        elseif getscriptbytecode then
+                            src = "-- [bytecode only — no decompiler available]\n-- Path: "..entry.path
+                        else
+                            src = "-- [decompiler not available in this executor]"
+                        end
+                    end)
+                    if not ok then src = "-- [decompile error]" end
+                    dumpSourceBox.Text      = src
+                    dumpSourceBox.TextColor3= C.goldText
+                    dumpSelected.source     = src  -- cache
+                end)
+            end)
+        end
+    end
+
+    dumpScriptCount.Text = shown.." scripts"
+end
+
+-- Scan game for scripts (name + path only, no decompile yet)
+dumpScanBtn.MouseButton1Click:Connect(function()
+    dumpScanBtn.Text             = "Scanning..."
+    dumpScanBtn.BackgroundColor3 = C.dimDark
+
+    task.spawn(function()
+        dumpScriptList = {}
+
+        for _, obj in pairs(game:GetDescendants()) do
+            if obj:IsA("LocalScript") or obj:IsA("ModuleScript") then
+                local path = ""
+                pcall(function() path = obj:GetFullName() end)
+                table.insert(dumpScriptList, {
+                    name  = obj.Name,
+                    path  = path,
+                    obj   = obj,
+                    class = obj.ClassName,
+                    source= nil  -- lazy load
+                })
+            end
+        end
+
+        -- Sort by name
+        table.sort(dumpScriptList, function(a,b) return a.name:lower() < b.name:lower() end)
+
+        renderDumpList()
+
+        dumpScanBtn.Text             = "🔍 Scan"
+        dumpScanBtn.BackgroundColor3 = C.green
+        addConLog("Dumper: found "..#dumpScriptList.." scripts", C.green,"[dump]")
+    end)
+end)
+
+-- Re-render when filter/search changes
+dumpFilterAll.MouseButton1Click:Connect(renderDumpList)
+dumpFilterLocal.MouseButton1Click:Connect(renderDumpList)
+dumpFilterModule.MouseButton1Click:Connect(renderDumpList)
+
+dumpSearchInput:GetPropertyChangedSignal("Text"):Connect(renderDumpList)
+
+-- Copy source
+dumpCopyBtn.MouseButton1Click:Connect(function()
+    if not dumpSelected or not dumpSelected.source then
+        dumpCopyBtn.Text = "Select first!"
+        task.delay(1.5, function() dumpCopyBtn.Text = "📋 Copy" end)
+        return
+    end
+    copyClip(dumpSelected.source)
+    dumpCopyBtn.Text = "✓ Copied!"
+    task.delay(2, function() dumpCopyBtn.Text = "📋 Copy" end)
+end)
+
+-- Export with metadata
+dumpExportBtn.MouseButton1Click:Connect(function()
+    if not dumpSelected or not dumpSelected.source then
+        dumpExportBtn.Text = "Select first!"
+        task.delay(1.5, function() dumpExportBtn.Text = "📤 Export" end)
+        return
+    end
+    local out = {
+        "-- ================================================",
+        "-- Script: "..dumpSelected.name,
+        "-- Type:   "..dumpSelected.class,
+        "-- Path:   "..dumpSelected.path,
+        "-- Game:   "..game.Name.." ("..game.PlaceId..")",
+        "-- Dumped: "..os.date("%Y-%m-%d %H:%M:%S"),
+        "-- ================================================",
+        "",
+        dumpSelected.source
+    }
+    copyClip(table.concat(out,"\n"))
+    dumpExportBtn.Text = "✓ Exported!"
+    task.delay(2, function() dumpExportBtn.Text = "📤 Export" end)
+end)
 
 -- ================================================
 -- TOOLS HANDLERS
@@ -791,115 +1074,9 @@ customLoadBtn.MouseButton1Click:Connect(function()
     loadTool(url, customStatus, customLoadBtn, "▶ Load")
 end)
 
--- ================================================
--- SCRIPT DUMPER LOGIC
--- ================================================
-local dumpMode = "all" -- "all", "local", "module"
-
-local function updateDumpModeBtns()
-    dumpModeAll.BackgroundColor3    = dumpMode=="all"    and C.goldBr      or C.tabInactive
-    dumpModeAll.TextColor3          = dumpMode=="all"    and C.bg           or C.goldText
-    dumpModeLocal.BackgroundColor3  = dumpMode=="local"  and C.orange       or C.tabInactive
-    dumpModeLocal.TextColor3        = dumpMode=="local"  and C.bg           or C.goldText
-    dumpModeModule.BackgroundColor3 = dumpMode=="module" and C.blue         or C.tabInactive
-    dumpModeModule.TextColor3       = dumpMode=="module" and C.bg           or C.goldText
-end
-updateDumpModeBtns()
-
-dumpModeAll.MouseButton1Click:Connect(function()    dumpMode="all";    updateDumpModeBtns() end)
-dumpModeLocal.MouseButton1Click:Connect(function()  dumpMode="local";  updateDumpModeBtns() end)
-dumpModeModule.MouseButton1Click:Connect(function() dumpMode="module"; updateDumpModeBtns() end)
-
-dumpRunBtn.MouseButton1Click:Connect(function()
-    dumpStatus.Text      = "⏳ Scanning..."
-    dumpStatus.TextColor3= C.goldText
-    dumpRunBtn.Text      = "Scanning..."
-    dumpRunBtn.BackgroundColor3 = C.dimDark
-
-    task.spawn(function()
-        local results = {}
-        local count   = 0
-        local errors  = 0
-
-        -- Header
-        table.insert(results, "=== Hub Tools Script Dumper ===")
-        table.insert(results, "Game: "..game.Name.." | PlaceId: "..game.PlaceId)
-        table.insert(results, "Mode: "..dumpMode.." | Time: "..os.date("%H:%M:%S"))
-        table.insert(results, string.rep("=",50))
-        table.insert(results, "")
-
-        -- Scan all descendants
-        for _, obj in pairs(game:GetDescendants()) do
-            local isLocal  = obj:IsA("LocalScript")
-            local isModule = obj:IsA("ModuleScript")
-
-            local include = (dumpMode=="all"    and (isLocal or isModule))
-                         or (dumpMode=="local"  and isLocal)
-                         or (dumpMode=="module" and isModule)
-
-            if include then
-                local path = ""
-                local src  = ""
-                local ok1  = pcall(function() path = obj:GetFullName() end)
-
-                -- Try get source via decompiler functions
-                local ok2 = pcall(function()
-                    if decompile then
-                        src = decompile(obj) or ""
-                    elseif getscriptbytecode then
-                        src = "-- [bytecode only, no decompiler]\n-- Path: "..path
-                    else
-                        src = "-- [source unavailable]"
-                    end
-                end)
-                if not ok2 then
-                    src = "-- [error reading source]"
-                    errors += 1
-                end
-
-                -- Skip empty scripts
-                if src and src ~= "" then
-                    count += 1
-                    table.insert(results, string.rep("-",40))
-                    table.insert(results, string.format("[%d] %s (%s)",
-                        count, obj.Name, obj.ClassName))
-                    table.insert(results, "Path: "..path)
-                    table.insert(results, string.rep("-",40))
-                    table.insert(results, src)
-                    table.insert(results, "")
-                end
-            end
-        end
-
-        -- Summary
-        table.insert(results, string.rep("=",50))
-        table.insert(results, string.format("Total: %d scripts | Errors: %d", count, errors))
-
-        if count == 0 then
-            dumpStatus.Text      = "✗ Tiada script jumpa / decompiler tak tersedia"
-            dumpStatus.TextColor3= C.red
-            dumpRunBtn.Text      = "📤 Dump & Copy"
-            dumpRunBtn.BackgroundColor3 = C.green
-            addConLog("Script Dumper: tiada result. Executor mungkin tak support decompile.", C.orange,"[dump]")
-            return
-        end
-
-        local output = table.concat(results, "\n")
-        copyClip(output)
-
-        dumpStatus.Text      = string.format("✓ %d scripts copied to clipboard!", count)
-        dumpStatus.TextColor3= C.green
-        dumpRunBtn.Text      = "✓ Done!"
-        dumpRunBtn.BackgroundColor3 = C.green
-        task.delay(3, function()
-            dumpRunBtn.Text = "📤 Dump & Copy"
-            dumpRunBtn.BackgroundColor3 = C.green
-        end)
-
-        addConLog(string.format("Dumped %d scripts (%s mode)", count, dumpMode), C.green,"[dump]")
-        addConLog("Results copied to clipboard!", C.dim,"[dump]")
-        setTab("console")
-    end)
+-- Open Script Dumper tab
+dumpCardBtn.MouseButton1Click:Connect(function()
+    openDumperTab()
 end)
 
 -- ================================================
