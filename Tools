@@ -709,8 +709,6 @@ end
 dumperCloseBtn.MouseButton1Click:Connect(function()
     dumperTab.Visible      = false
     dumperCloseBtn.Visible = false
-    tabs["dumper"]         = nil
-    tabContents["dumper"]  = nil
     dumperContent.Visible  = false
     setTab("tools")
 end)
