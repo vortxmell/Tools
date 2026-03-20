@@ -924,28 +924,54 @@ dumpScanBtn.MouseButton1Click:Connect(function()
     task.spawn(function()
         dumpScriptList = {}
 
-        for _, obj in pairs(game:GetDescendants()) do
+        local skipPaths = {
+            "CoreGui", "CorePackages", "RobloxGui",
+            "BuiltInPlugins", "BuiltInStandalonePlugins",
+        }
+        local function isInternal(path)
+            for _, s in ipairs(skipPaths) do
+                if path:sub(1, #s) == s then return true end
+            end
+            return false
+        end
+
+        -- Collect semua descendants sekali gus
+        local all   = game:GetDescendants()
+        local total = #all
+        local found = 0
+
+        for i, obj in ipairs(all) do
+            -- Yield setiap 30 objects — smooth, tak freeze
+            if i % 30 == 0 then
+                dumpScriptCount.Text = found.." found ("..math.floor(i/total*100).."%)"
+                task.wait()
+            end
+
             if obj:IsA("LocalScript") or obj:IsA("ModuleScript") then
                 local path = ""
                 pcall(function() path = obj:GetFullName() end)
-                table.insert(dumpScriptList, {
-                    name  = obj.Name,
-                    path  = path,
-                    obj   = obj,
-                    class = obj.ClassName,
-                    source= nil  -- lazy load
-                })
+                if not isInternal(path) then
+                    found += 1
+                    table.insert(dumpScriptList, {
+                        name  = obj.Name,
+                        path  = path,
+                        obj   = obj,
+                        class = obj.ClassName,
+                        source= nil
+                    })
+                end
             end
         end
 
-        -- Sort by name
-        table.sort(dumpScriptList, function(a,b) return a.name:lower() < b.name:lower() end)
+        table.sort(dumpScriptList, function(a,b)
+            return a.name:lower() < b.name:lower()
+        end)
 
         renderDumpList()
 
         dumpScanBtn.Text             = "🔍 Scan"
         dumpScanBtn.BackgroundColor3 = C.green
-        addConLog("Dumper: found "..#dumpScriptList.." scripts", C.green,"[dump]")
+        addConLog("Dumper: "..#dumpScriptList.." scripts found", C.green,"[dump]")
     end)
 end)
 
