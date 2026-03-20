@@ -308,6 +308,18 @@ local toolsContent = mkFrame(mainWin,
 toolsContent.ClipsDescendants = true
 toolsContent.Visible          = false
 
+-- Scrollable inner container
+local toolsScroll = Instance.new("ScrollingFrame")
+toolsScroll.Size                   = UDim2.new(1,0,1,0)
+toolsScroll.Position               = UDim2.new(0,0,0,0)
+toolsScroll.BackgroundTransparency = 1
+toolsScroll.BorderSizePixel        = 0
+toolsScroll.ScrollBarThickness     = 4
+toolsScroll.ScrollBarImageColor3   = C.gold
+toolsScroll.CanvasSize             = UDim2.new(0,0,0,0)
+toolsScroll.AutomaticCanvasSize    = Enum.AutomaticSize.Y
+toolsScroll.Parent                 = toolsContent
+
 tabs["console"]        = conTab
 tabs["rspy"]           = rspyTab
 tabs["tools"]          = toolsTab
@@ -611,19 +623,19 @@ local function mkToolCard(parent, yPos, icon, title, desc, btnText, btnColor)
 end
 
 -- Tool 1: Dex Explorer
-local dexBtn, dexStatus = mkToolCard(toolsContent, 8,
+local dexBtn, dexStatus = mkToolCard(toolsScroll, 8,
     "📦", "Dex Explorer",
     "Full instance explorer\nBrowse game tree, properties",
     "▶ Load", C.green)
 
 -- Tool 2: Simple Spy V3
-local sspyBtn, sspyStatus = mkToolCard(toolsContent, 86,
+local sspyBtn, sspyStatus = mkToolCard(toolsScroll, 86,
     "🔍", "Simple Spy V3",
     "Standalone remote spy\nBy exx — IY integration",
     "▶ Load", C.blue)
 
 -- Tool 3: Custom URL
-local customCard = mkFrame(toolsContent,
+local customCard = mkFrame(toolsScroll,
     UDim2.new(1,-16,0,86),
     UDim2.new(0,8,0,164),
     C.panelDark, 6)
@@ -653,6 +665,46 @@ local customLoadBtn = mkBtn(customCard, "▶ Load",
 local customStatus = mkLabel(customCard, "",
     UDim2.new(1,-16,0,14), UDim2.new(0,8,0,66),
     C.dim, 9, Enum.Font.Gotham, Enum.TextXAlignment.Center)
+
+-- ================================================
+-- Tool 4: Script Dumper (built-in)
+-- ================================================
+local dumpCard = mkFrame(toolsScroll,
+    UDim2.new(1,-16,0,130),
+    UDim2.new(0,8,0,258),
+    C.panelDark, 6)
+mkStroke(dumpCard, C.goldBr, 1.5)
+
+mkLabel(dumpCard, "📜",
+    UDim2.new(0,36,0,36), UDim2.new(0,6,0,8),
+    C.goldText, 22, Enum.Font.GothamBold, Enum.TextXAlignment.Center)
+
+mkLabel(dumpCard, "Script Dumper",
+    UDim2.new(1,-120,0,18), UDim2.new(0,48,0,8),
+    C.goldText, 12, Enum.Font.GothamBold)
+
+mkLabel(dumpCard, "Dump LocalScripts & ModuleScripts\nCari remote names & game logic",
+    UDim2.new(1,-120,0,28), UDim2.new(0,48,0,26),
+    C.dim, 9)
+
+-- Mode selector buttons
+local dumpModeAll = mkBtn(dumpCard, "All Scripts",
+    UDim2.new(0,76,0,20), UDim2.new(0,8,0,58),
+    C.goldBr, C.bg, 10)
+local dumpModeLocal = mkBtn(dumpCard, "LocalScript",
+    UDim2.new(0,72,0,20), UDim2.new(0,88,0,58),
+    C.tabInactive, C.goldText, 10)
+local dumpModeModule = mkBtn(dumpCard, "ModuleScript",
+    UDim2.new(0,80,0,20), UDim2.new(0,164,0,58),
+    C.tabInactive, C.goldText, 10)
+
+local dumpRunBtn = mkBtn(dumpCard, "📤 Dump & Copy",
+    UDim2.new(0,100,0,24), UDim2.new(0,8,0,84),
+    C.green, C.bg, 11)
+
+local dumpStatus = mkLabel(dumpCard, "Ready — pilih mode dan tekan Dump",
+    UDim2.new(1,-16,0,16), UDim2.new(0,8,0,112),
+    C.dim, 9, Enum.Font.Gotham)
 
 -- ================================================
 -- TOOLS HANDLERS
@@ -737,6 +789,117 @@ customLoadBtn.MouseButton1Click:Connect(function()
         return
     end
     loadTool(url, customStatus, customLoadBtn, "▶ Load")
+end)
+
+-- ================================================
+-- SCRIPT DUMPER LOGIC
+-- ================================================
+local dumpMode = "all" -- "all", "local", "module"
+
+local function updateDumpModeBtns()
+    dumpModeAll.BackgroundColor3    = dumpMode=="all"    and C.goldBr      or C.tabInactive
+    dumpModeAll.TextColor3          = dumpMode=="all"    and C.bg           or C.goldText
+    dumpModeLocal.BackgroundColor3  = dumpMode=="local"  and C.orange       or C.tabInactive
+    dumpModeLocal.TextColor3        = dumpMode=="local"  and C.bg           or C.goldText
+    dumpModeModule.BackgroundColor3 = dumpMode=="module" and C.blue         or C.tabInactive
+    dumpModeModule.TextColor3       = dumpMode=="module" and C.bg           or C.goldText
+end
+updateDumpModeBtns()
+
+dumpModeAll.MouseButton1Click:Connect(function()    dumpMode="all";    updateDumpModeBtns() end)
+dumpModeLocal.MouseButton1Click:Connect(function()  dumpMode="local";  updateDumpModeBtns() end)
+dumpModeModule.MouseButton1Click:Connect(function() dumpMode="module"; updateDumpModeBtns() end)
+
+dumpRunBtn.MouseButton1Click:Connect(function()
+    dumpStatus.Text      = "⏳ Scanning..."
+    dumpStatus.TextColor3= C.goldText
+    dumpRunBtn.Text      = "Scanning..."
+    dumpRunBtn.BackgroundColor3 = C.dimDark
+
+    task.spawn(function()
+        local results = {}
+        local count   = 0
+        local errors  = 0
+
+        -- Header
+        table.insert(results, "=== Hub Tools Script Dumper ===")
+        table.insert(results, "Game: "..game.Name.." | PlaceId: "..game.PlaceId)
+        table.insert(results, "Mode: "..dumpMode.." | Time: "..os.date("%H:%M:%S"))
+        table.insert(results, string.rep("=",50))
+        table.insert(results, "")
+
+        -- Scan all descendants
+        for _, obj in pairs(game:GetDescendants()) do
+            local isLocal  = obj:IsA("LocalScript")
+            local isModule = obj:IsA("ModuleScript")
+
+            local include = (dumpMode=="all"    and (isLocal or isModule))
+                         or (dumpMode=="local"  and isLocal)
+                         or (dumpMode=="module" and isModule)
+
+            if include then
+                local path = ""
+                local src  = ""
+                local ok1  = pcall(function() path = obj:GetFullName() end)
+
+                -- Try get source via decompiler functions
+                local ok2 = pcall(function()
+                    if decompile then
+                        src = decompile(obj) or ""
+                    elseif getscriptbytecode then
+                        src = "-- [bytecode only, no decompiler]\n-- Path: "..path
+                    else
+                        src = "-- [source unavailable]"
+                    end
+                end)
+                if not ok2 then
+                    src = "-- [error reading source]"
+                    errors += 1
+                end
+
+                -- Skip empty scripts
+                if src and src ~= "" then
+                    count += 1
+                    table.insert(results, string.rep("-",40))
+                    table.insert(results, string.format("[%d] %s (%s)",
+                        count, obj.Name, obj.ClassName))
+                    table.insert(results, "Path: "..path)
+                    table.insert(results, string.rep("-",40))
+                    table.insert(results, src)
+                    table.insert(results, "")
+                end
+            end
+        end
+
+        -- Summary
+        table.insert(results, string.rep("=",50))
+        table.insert(results, string.format("Total: %d scripts | Errors: %d", count, errors))
+
+        if count == 0 then
+            dumpStatus.Text      = "✗ Tiada script jumpa / decompiler tak tersedia"
+            dumpStatus.TextColor3= C.red
+            dumpRunBtn.Text      = "📤 Dump & Copy"
+            dumpRunBtn.BackgroundColor3 = C.green
+            addConLog("Script Dumper: tiada result. Executor mungkin tak support decompile.", C.orange,"[dump]")
+            return
+        end
+
+        local output = table.concat(results, "\n")
+        copyClip(output)
+
+        dumpStatus.Text      = string.format("✓ %d scripts copied to clipboard!", count)
+        dumpStatus.TextColor3= C.green
+        dumpRunBtn.Text      = "✓ Done!"
+        dumpRunBtn.BackgroundColor3 = C.green
+        task.delay(3, function()
+            dumpRunBtn.Text = "📤 Dump & Copy"
+            dumpRunBtn.BackgroundColor3 = C.green
+        end)
+
+        addConLog(string.format("Dumped %d scripts (%s mode)", count, dumpMode), C.green,"[dump]")
+        addConLog("Results copied to clipboard!", C.dim,"[dump]")
+        setTab("console")
+    end)
 end)
 
 -- ================================================
