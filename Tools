@@ -919,28 +919,54 @@ dumpScanBtn.MouseButton1Click:Connect(function()
     task.spawn(function()
         dumpScriptList = {}
 
+        -- Skip Roblox internal paths — tak relevant untuk exploit research
+        local skipPaths = {
+            "CoreGui", "CorePackages", "RobloxGui",
+            "BuiltInPlugins", "BuiltInStandalonePlugins",
+        }
+        local function isInternal(path)
+            for _, s in ipairs(skipPaths) do
+                if path:sub(1, #s) == s then return true end
+            end
+            return false
+        end
+
+        local count = 0
         for _, obj in pairs(game:GetDescendants()) do
             if obj:IsA("LocalScript") or obj:IsA("ModuleScript") then
                 local path = ""
                 pcall(function() path = obj:GetFullName() end)
-                table.insert(dumpScriptList, {
-                    name  = obj.Name,
-                    path  = path,
-                    obj   = obj,
-                    class = obj.ClassName,
-                    source= nil  -- lazy load
-                })
+
+                -- Skip Roblox internals
+                if not isInternal(path) then
+                    table.insert(dumpScriptList, {
+                        name  = obj.Name,
+                        path  = path,
+                        obj   = obj,
+                        class = obj.ClassName,
+                        source= nil
+                    })
+                end
+
+                count += 1
+                -- Yield setiap 100 supaya tak freeze
+                if count % 100 == 0 then
+                    dumpScriptCount.Text = #dumpScriptList.." found..."
+                    task.wait()
+                end
             end
         end
 
         -- Sort by name
-        table.sort(dumpScriptList, function(a,b) return a.name:lower() < b.name:lower() end)
+        table.sort(dumpScriptList, function(a,b)
+            return a.name:lower() < b.name:lower()
+        end)
 
         renderDumpList()
 
         dumpScanBtn.Text             = "🔍 Scan"
         dumpScanBtn.BackgroundColor3 = C.green
-        addConLog("Dumper: found "..#dumpScriptList.." scripts", C.green,"[dump]")
+        addConLog("Dumper: "..#dumpScriptList.." scripts (skipped internals)", C.green,"[dump]")
     end)
 end)
 
