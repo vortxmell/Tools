@@ -3068,6 +3068,12 @@ local function parseCustomSheet(str)
     return sheet
 end
 
+-- viz highlight (dummy — boleh expand kalau ada UI piano keys)
+local function vizHighlight(key)
+    -- optional: highlight key UI bila play
+    -- buat masa ni biar kosong dulu
+end
+
 -- Main play function
 local function pianoPlaySheet(sheet, label)
     if pianoPlaying then return end
