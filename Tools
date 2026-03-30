@@ -2663,6 +2663,536 @@ pcall(setupAntiScan)
 -- ================================================
 -- INIT
 -- ================================================
+
+--PATCH--
+-- ================================================
+-- PIANO TAB PATCH — Hub Tools v3.0
+-- Paste SEBELUM line: setTab("console") di bahagian INIT
+-- ================================================
+
+-- ================================================
+-- PIANO TAB BUTTON + CONTENT
+-- Letak selepas dumperCloseBtn (x=249), piano kat x=270
+-- ================================================
+local pianoTab = mkBtn(tabBar, "🎹 Piano",
+    UDim2.new(0,56,1,-4), UDim2.new(0,270,0,2),
+    C.tabInactive, C.dim, 10)
+
+local pianoContent = mkFrame(mainWin,
+    UDim2.new(1,0,1,-HEADER_H), UDim2.new(0,0,0,HEADER_H), C.bg, 0)
+pianoContent.ClipsDescendants = true
+pianoContent.Visible          = false
+
+tabs["piano"]        = pianoTab
+tabContents["piano"] = pianoContent
+
+pianoTab.MouseButton1Click:Connect(function() setTab("piano") end)
+
+-- ================================================
+-- PIANO STATE
+-- ================================================
+local pianoPlaying   = false
+local pianoThread    = nil
+local pianoSpeed     = 1.0   -- multiplier (0.5 = laju 2x)
+local pianoLooping   = false
+
+-- Remote refs (cari masa tab dibuka)
+local NoteRemote_P    = nil
+local SustainRemote_P = nil
+local FinishRemote_P  = nil
+
+local function findPianoRemotes()
+    local RS = game:GetService("ReplicatedStorage")
+    local function find(name)
+        return RS:FindFirstChild(name, true)
+            or game:FindFirstChild(name, true)
+    end
+    NoteRemote_P    = find("NoteRemote")
+    SustainRemote_P = find("SustainRemote")
+    FinishRemote_P  = find("FinishNonSustainedNotesRemote")
+    return NoteRemote_P ~= nil
+end
+
+-- ================================================
+-- KEY MAP  (key -> {noteIdx, pitchOff, assetId, kcVal, kcName})
+-- Data dari rSpy capture
+-- ================================================
+local PIANO_PITCH_BASE = 1.5937751531600952
+
+local PIANO_MAP = {
+    -- Row bawah (white keys)
+    ["1"]={1,  0,  "rbxassetid://233836579", 49,  "Press_11"},
+    ["2"]={3,  0,  "rbxassetid://233844049", 50,  "Press_23"},
+    ["q"]={18, 16, "rbxassetid://233852841", 113, "Press_q18"},
+    ["w"]={20, 24, "rbxassetid://233852841", 119, "Press_w20"},
+    ["e"]={22, 24, "rbxassetid://233854135", 101, "Press_e22"},
+    ["r"]={24, 24, "rbxassetid://233856105", 114, "Press_r24"},
+    ["t"]={25, 32, "rbxassetid://233836579", 116, "Press_t25"},
+    ["y"]={27, 32, "rbxassetid://233844049", 121, "Press_y27"},
+    ["u"]={29, 32, "rbxassetid://84572301873778", 117, "Press_u29"},
+    ["i"]={30, 40, "rbxassetid://84572301873778", 105, "Press_i30"},
+    ["o"]={32, 40, "rbxassetid://233852841", 111, "Press_o32"},
+    ["p"]={34, 40, "rbxassetid://233854135", 112, "Press_p34"},
+    ["a"]={36, 40, "rbxassetid://233856105", 97,  "Press_a36"},
+    ["s"]={37, 48, "rbxassetid://233836579", 115, "Press_s37"},
+    ["d"]={39, 48, "rbxassetid://233844049", 100, "Press_d39"},
+    ["f"]={41, 48, "rbxassetid://84572301873778", 102, "Press_f41"},
+    ["g"]={42, 56, "rbxassetid://84572301873778", 103, "Press_g42"},
+    ["h"]={44, 56, "rbxassetid://233852841", 104, "Press_h44"},
+    ["j"]={46, 56, "rbxassetid://233854135", 106, "Press_j46"},
+    ["k"]={48, 56, "rbxassetid://233856105", 107, "Press_k48"},
+    ["l"]={49, 64, "rbxassetid://233836579", 108, "Press_l49"},
+    ["z"]={51, 64, "rbxassetid://233844049", 122, "Press_z51"},
+    ["x"]={53, 64, "rbxassetid://84572301873778", 120, "Press_x53"},
+    ["c"]={54, 72, "rbxassetid://84572301873778", 99,  "Press_c54"},
+    ["v"]={56, 72, "rbxassetid://233852841", 118, "Press_v56"},
+    ["b"]={58, 72, "rbxassetid://233854135", 98,  "Press_b58"},
+    ["n"]={60, 72, "rbxassetid://233856105", 110, "Press_n60"},
+    ["m"]={61, 80, "rbxassetid://233836579", 109, "Press_m61"},
+    -- Row atas (black keys / sharp)
+    ["Q"]={19, 16, "rbxassetid://233852841", 81,  "Press_Q19"},
+    ["W"]={21, 16, "rbxassetid://233854135", 87,  "Press_W21"},
+    ["E"]={23, 16, "rbxassetid://233856105", 69,  "Press_E23"},
+    ["T"]={26, 40, "rbxassetid://233836579", 84,  "Press_T26"},
+    ["Y"]={28, 40, "rbxassetid://233844049", 89,  "Press_Y28"},
+    ["I"]={31, 32, "rbxassetid://233852841", 73,  "Press_I31"},
+    ["O"]={33, 32, "rbxassetid://233854135", 79,  "Press_O33"},
+    ["P"]={35, 32, "rbxassetid://233856105", 80,  "Press_P35"},
+    ["S"]={38, 56, "rbxassetid://233836579", 83,  "Press_S38"},
+    ["D"]={40, 56, "rbxassetid://233844049", 68,  "Press_D40"},
+    ["G"]={43, 48, "rbxassetid://233852841", 71,  "Press_G43"},
+    ["H"]={45, 48, "rbxassetid://233854135", 72,  "Press_H45"},
+    ["J"]={47, 48, "rbxassetid://233856105", 74,  "Press_J47"},
+    ["L"]={50, 72, "rbxassetid://233836579", 76,  "Press_L50"},
+    ["Z"]={52, 72, "rbxassetid://233844049", 90,  "Press_Z52"},
+    ["C"]={55, 64, "rbxassetid://233852841", 67,  "Press_C55"},
+    ["V"]={57, 64, "rbxassetid://233854135", 86,  "Press_V57"},
+    ["B"]={59, 64, "rbxassetid://233856105", 66,  "Press_B59"},
+}
+
+-- ================================================
+-- FIRE ONE NOTE
+-- ================================================
+local function pianoFireNote(key, dur)
+    local d = PIANO_MAP[key]
+    if not d then return end
+
+    local kc = {Value=d[4], Name=d[5], EnumType=Enum.KeyCode.Unknown}
+
+    pcall(function()
+        NoteRemote_P:FireServer(
+            d[1], d[3], PIANO_PITCH_BASE,
+            d[2], 1, false, 5, 0.85, kc
+        )
+    end)
+    if SustainRemote_P then
+        pcall(function() SustainRemote_P:FireServer(kc, 0.85) end)
+    end
+
+    task.wait((dur or 0.3) * pianoSpeed)
+
+    if FinishRemote_P then
+        pcall(function() FinishRemote_P:FireServer(0.85) end)
+    end
+end
+
+-- ================================================
+-- SHEET MUSIC
+-- Format: {{"key", delay}, ...}
+-- "_" = rest/pause, delay = saat
+-- ================================================
+local PIANO_SHEETS = {
+    {
+        name = "🎂 Happy Birthday",
+        sheet = {
+            -- Happy Birthday to You (C major, key layout)
+            {"t",0.3},{"t",0.15},{"y",0.45},{"t",0.45},{"i",0.45},{"u",0.9},
+            {"t",0.3},{"t",0.15},{"y",0.45},{"t",0.45},{"o",0.45},{"i",0.9},
+            {"t",0.3},{"t",0.15},{"l",0.45},{"j",0.45},{"i",0.3},{"u",0.3},{"y",0.45},
+            {"L",0.3},{"L",0.15},{"j",0.45},{"i",0.45},{"o",0.45},{"i",0.9},
+        }
+    },
+    {
+        name = "⭐ Twinkle Twinkle",
+        sheet = {
+            {"t",0.35},{"t",0.35},{"o",0.35},{"o",0.35},{"p",0.35},{"p",0.35},{"o",0.7},
+            {"i",0.35},{"i",0.35},{"u",0.35},{"u",0.35},{"y",0.35},{"y",0.35},{"t",0.7},
+            {"o",0.35},{"o",0.35},{"i",0.35},{"i",0.35},{"u",0.35},{"u",0.35},{"y",0.7},
+            {"o",0.35},{"o",0.35},{"i",0.35},{"i",0.35},{"u",0.35},{"u",0.35},{"y",0.7},
+            {"t",0.35},{"t",0.35},{"o",0.35},{"o",0.35},{"p",0.35},{"p",0.35},{"o",0.7},
+            {"i",0.35},{"i",0.35},{"u",0.35},{"u",0.35},{"y",0.35},{"y",0.35},{"t",0.7},
+        }
+    },
+    {
+        name = "🌙 Jingle Bells",
+        sheet = {
+            {"u",0.3},{"u",0.3},{"u",0.6},
+            {"u",0.3},{"u",0.3},{"u",0.6},
+            {"u",0.3},{"o",0.3},{"t",0.3},{"y",0.3},{"u",0.9},
+            {"i",0.3},{"i",0.3},{"i",0.3},{"i",0.3},
+            {"i",0.3},{"u",0.3},{"u",0.3},{"u",0.15},{"u",0.15},
+            {"u",0.3},{"y",0.3},{"y",0.3},{"u",0.3},{"y",0.3},{"o",0.6},
+            {"u",0.3},{"u",0.3},{"u",0.6},
+            {"u",0.3},{"u",0.3},{"u",0.6},
+            {"u",0.3},{"o",0.3},{"t",0.3},{"y",0.3},{"u",0.9},
+            {"i",0.3},{"i",0.3},{"i",0.3},{"i",0.3},
+            {"i",0.3},{"u",0.3},{"u",0.3},{"u",0.15},{"u",0.15},
+            {"o",0.3},{"o",0.3},{"i",0.3},{"y",0.3},{"t",0.9},
+        }
+    },
+}
+
+local selectedSong = 1  -- index dalam PIANO_SHEETS
+
+-- ================================================
+-- PIANO TAB UI
+-- ================================================
+
+-- Top toolbar
+local pianoToolbar = mkFrame(pianoContent,
+    UDim2.new(1,-16,0,30), UDim2.new(0,8,0,6), C.panelDark, 6)
+mkStroke(pianoToolbar, C.gold, 1)
+
+-- Status label kat tengah
+local pianoStatusLbl = mkLabel(pianoToolbar,
+    "⏹ Ready",
+    UDim2.new(1,-200,1,0), UDim2.new(0,4,0,0),
+    C.dim, 10, Enum.Font.Gotham, Enum.TextXAlignment.Left)
+
+-- Play/Stop button
+local pianoPlayBtn = mkBtn(pianoToolbar, "▶ Play",
+    UDim2.new(0,60,1,-6), UDim2.new(1,-190,0,3),
+    C.green, C.bg, 11)
+
+-- Loop toggle
+local pianoLoopBtn = mkBtn(pianoToolbar, "🔁 Loop",
+    UDim2.new(0,54,1,-6), UDim2.new(1,-130,0,3),
+    C.dimDark, C.goldText, 11)
+
+-- Speed label + input
+mkLabel(pianoToolbar, "Speed:",
+    UDim2.new(0,36,1,0), UDim2.new(1,-74,0,0),
+    C.dim, 10, Enum.Font.Gotham)
+local pianoSpeedInput = mkInput(pianoToolbar, "1.0",
+    UDim2.new(0,30,1,-6), UDim2.new(1,-36,0,3))
+pianoSpeedInput.TextXAlignment = Enum.TextXAlignment.Center
+
+-- ── Song selector ──
+local songSelectorBar = mkFrame(pianoContent,
+    UDim2.new(1,-16,0,26), UDim2.new(0,8,0,44), C.panelDark, 5)
+mkStroke(songSelectorBar, C.gold, 1)
+
+local songLabel = mkLabel(songSelectorBar,
+    PIANO_SHEETS[1].name,
+    UDim2.new(1,-80,1,0), UDim2.new(0,8,0,0),
+    C.goldText, 11, Enum.Font.GothamBold)
+
+local prevSongBtn = mkBtn(songSelectorBar, "◀",
+    UDim2.new(0,28,1,-4), UDim2.new(1,-62,0,2),
+    C.dimDark, C.goldText, 12)
+local nextSongBtn = mkBtn(songSelectorBar, "▶",
+    UDim2.new(0,28,1,-4), UDim2.new(1,-30,0,2),
+    C.dimDark, C.goldText, 12)
+
+-- ── Progress bar area ──
+local progressBg = mkFrame(pianoContent,
+    UDim2.new(1,-16,0,8), UDim2.new(0,8,0,78), C.panelDark, 4)
+mkStroke(progressBg, C.gold, 1)
+
+local progressFill = mkFrame(progressBg,
+    UDim2.new(0,0,1,-2), UDim2.new(0,1,0,1),
+    C.goldBr, 3)
+
+-- ── Note visualizer (highlight semasa main) ──
+local vizFrame = mkFrame(pianoContent,
+    UDim2.new(1,-16,0,50), UDim2.new(0,8,0,94), C.panelDark, 6)
+mkStroke(vizFrame, C.gold, 1)
+
+-- Piano mini keys display (26 white keys visual)
+local VIZ_KEYS = {"1","2","q","w","e","r","t","y","u","i","o","p",
+                  "a","s","d","f","g","h","j","k","l","z","x","c","v","b","n","m"}
+local vizKeyFrames = {}
+
+do
+    local totalKeys = #VIZ_KEYS
+    local keyW = math.floor((vizFrame.AbsoluteSize.X - 8) / totalKeys)
+    -- Guna relative size sebab AbsoluteSize 0 masa create
+    for idx, k in ipairs(VIZ_KEYS) do
+        local kf = mkFrame(vizFrame,
+            UDim2.new(1/totalKeys, -1, 1, -8),
+            UDim2.new((idx-1)/totalKeys, 1, 0, 4),
+            Color3.fromRGB(200,200,200), 2)
+        mkLabel(kf, k,
+            UDim2.new(1,0,0,14), UDim2.new(0,0,1,-14),
+            Color3.fromRGB(60,40,10), 8, Enum.Font.GothamBold,
+            Enum.TextXAlignment.Center)
+        vizKeyFrames[k] = kf
+    end
+end
+
+local function vizHighlight(key)
+    local kf = vizKeyFrames[key]
+    if not kf then return end
+    kf.BackgroundColor3 = C.goldBr
+    task.delay(0.15, function()
+        if kf and kf.Parent then
+            kf.BackgroundColor3 = Color3.fromRGB(200,200,200)
+        end
+    end)
+end
+
+-- ── Custom sheet input ──
+local customSheetLabel = mkLabel(pianoContent,
+    "Custom Sheet (format: key,delay key,delay ...)",
+    UDim2.new(1,-16,0,14), UDim2.new(0,8,0,152),
+    C.dim, 9, Enum.Font.Gotham)
+
+local customSheetBox = Instance.new("TextBox")
+customSheetBox.Size              = UDim2.new(1,-16,0,46)
+customSheetBox.Position          = UDim2.new(0,8,0,168)
+customSheetBox.BackgroundColor3  = C.panelDark
+customSheetBox.BorderSizePixel   = 0
+customSheetBox.Text              = ""
+customSheetBox.PlaceholderText   = "Contoh: t,0.3 t,0.3 y,0.6 t,0.6 i,0.6 u,1.2"
+customSheetBox.TextColor3        = C.goldText
+customSheetBox.PlaceholderColor3 = C.dim
+customSheetBox.TextSize          = 10
+customSheetBox.Font              = Enum.Font.Code
+customSheetBox.TextXAlignment    = Enum.TextXAlignment.Left
+customSheetBox.TextYAlignment    = Enum.TextYAlignment.Top
+customSheetBox.MultiLine         = true
+customSheetBox.ClearTextOnFocus  = false
+customSheetBox.TextWrapped       = true
+customSheetBox.Parent            = pianoContent
+Instance.new("UICorner", customSheetBox).CornerRadius = UDim.new(0,5)
+mkStroke(customSheetBox, C.gold, 1)
+local csPad = Instance.new("UIPadding", customSheetBox)
+csPad.PaddingLeft = UDim.new(0,6)
+csPad.PaddingTop  = UDim.new(0,4)
+
+local useCustomBtn = mkBtn(pianoContent, "▶ Play Custom",
+    UDim2.new(1,-16,0,26), UDim2.new(0,8,0,222),
+    C.purple, C.white, 11)
+
+-- Remote status row
+local remoteStatusLbl = mkLabel(pianoContent,
+    "⚠ Remotes belum scan",
+    UDim2.new(1,-86,0,16), UDim2.new(0,8,0,256),
+    C.orange, 9, Enum.Font.Gotham)
+
+local scanRemoteBtn = mkBtn(pianoContent, "🔍 Scan",
+    UDim2.new(0,70,0,22), UDim2.new(1,-78,0,254),
+    C.goldBr, C.bg, 11)
+
+-- ── Info bar bawah ──
+local pianoInfoBar = mkFrame(pianoContent,
+    UDim2.new(1,-16,0,22), UDim2.new(0,8,1,-28), C.panelDark, 4)
+
+local pianoNoteLbl = mkLabel(pianoInfoBar,
+    "Note: —",
+    UDim2.new(0.5,0,1,0), UDim2.new(0,4,0,0),
+    C.goldText, 10, Enum.Font.Code)
+
+local pianoProgLbl = mkLabel(pianoInfoBar,
+    "0 / 0",
+    UDim2.new(0.5,0,1,0), UDim2.new(0.5,0,0,0),
+    C.dim, 10, Enum.Font.Gotham, Enum.TextXAlignment.Right)
+
+-- ================================================
+-- PIANO LOGIC
+-- ================================================
+
+local function updateSongLabel()
+    local s = PIANO_SHEETS[selectedSong]
+    songLabel.Text = s and s.name or "—"
+end
+
+prevSongBtn.MouseButton1Click:Connect(function()
+    if pianoPlaying then return end
+    selectedSong = selectedSong - 1
+    if selectedSong < 1 then selectedSong = #PIANO_SHEETS end
+    updateSongLabel()
+    customSheetBox.Text = ""
+end)
+
+nextSongBtn.MouseButton1Click:Connect(function()
+    if pianoPlaying then return end
+    selectedSong = selectedSong + 1
+    if selectedSong > #PIANO_SHEETS then selectedSong = 1 end
+    updateSongLabel()
+    customSheetBox.Text = ""
+end)
+
+pianoLoopBtn.MouseButton1Click:Connect(function()
+    pianoLooping = not pianoLooping
+    pianoLoopBtn.BackgroundColor3 = pianoLooping and C.orange  or C.dimDark
+    pianoLoopBtn.TextColor3       = pianoLooping and C.bg      or C.goldText
+end)
+
+pianoSpeedInput.FocusLost:Connect(function()
+    local v = tonumber(pianoSpeedInput.Text)
+    if v and v > 0 and v <= 5 then
+        pianoSpeed = v
+        pianoStatusLbl.Text = "Speed: "..v.."x"
+    else
+        pianoSpeedInput.Text = tostring(pianoSpeed)
+    end
+end)
+
+scanRemoteBtn.MouseButton1Click:Connect(function()
+    scanRemoteBtn.Text = "Scanning..."
+    local ok = findPianoRemotes()
+    if ok then
+        remoteStatusLbl.Text      = "✓ NoteRemote found!"
+        remoteStatusLbl.TextColor3 = C.green
+        scanRemoteBtn.Text        = "✓ Done"
+        scanRemoteBtn.BackgroundColor3 = C.green
+        addConLog("Piano: remotes found!", C.green, "[piano]")
+    else
+        remoteStatusLbl.Text      = "✗ NoteRemote tak jumpa"
+        remoteStatusLbl.TextColor3 = C.red
+        scanRemoteBtn.Text        = "🔍 Scan"
+        addConLog("Piano: NoteRemote tidak jumpa dalam game ini", C.red, "[piano]")
+    end
+end)
+
+-- Parse custom sheet string -> sheet table
+local function parseCustomSheet(str)
+    local sheet = {}
+    for pair in str:gmatch("%S+") do
+        local k, d = pair:match("^(.+),([%d%.]+)$")
+        if k and d then
+            table.insert(sheet, {k, tonumber(d)})
+        end
+    end
+    return sheet
+end
+
+-- Main play function
+local function pianoPlaySheet(sheet, label)
+    if pianoPlaying then return end
+    if not NoteRemote_P then
+        pianoStatusLbl.Text      = "✗ Scan remotes dulu!"
+        pianoStatusLbl.TextColor3 = C.red
+        addConLog("Piano: scan remotes dulu!", C.orange, "[piano]")
+        return
+    end
+    if not sheet or #sheet == 0 then
+        pianoStatusLbl.Text = "✗ Sheet kosong"
+        return
+    end
+
+    pianoPlaying = true
+    pianoPlayBtn.Text             = "⏹ Stop"
+    pianoPlayBtn.BackgroundColor3 = C.red
+    pianoPlayBtn.TextColor3       = C.white
+
+    pianoThread = task.spawn(function()
+        repeat
+            local total = #sheet
+            for i, note in ipairs(sheet) do
+                if not pianoPlaying then break end
+
+                local key = note[1]
+                local dur = note[2] or 0.3
+
+                -- Update UI
+                pianoNoteLbl.Text  = "Note: "..key
+                pianoProgLbl.Text  = i.." / "..total
+                pianoStatusLbl.Text = "▶ Playing: "..(label or "Custom")
+                pianoStatusLbl.TextColor3 = C.green
+
+                -- Progress bar
+                progressFill.Size = UDim2.new(i/total, 0, 1, -2)
+
+                vizHighlight(key)
+                pianoFireNote(key, dur)
+            end
+        until not pianoLooping or not pianoPlaying
+
+        -- Done
+        pianoPlaying = false
+        pianoPlayBtn.Text             = "▶ Play"
+        pianoPlayBtn.BackgroundColor3 = C.green
+        pianoPlayBtn.TextColor3       = C.bg
+        pianoStatusLbl.Text      = "⏹ Done"
+        pianoStatusLbl.TextColor3 = C.dim
+        pianoNoteLbl.Text  = "Note: —"
+        progressFill.Size  = UDim2.new(0,0,1,-2)
+        addConLog("Piano: siap main!", C.green, "[piano]")
+    end)
+end
+
+-- Stop
+local function pianoStop()
+    pianoPlaying = false
+    pianoPlayBtn.Text             = "▶ Play"
+    pianoPlayBtn.BackgroundColor3 = C.green
+    pianoPlayBtn.TextColor3       = C.bg
+    pianoStatusLbl.Text      = "⏹ Stopped"
+    pianoStatusLbl.TextColor3 = C.dim
+    progressFill.Size  = UDim2.new(0,0,1,-2)
+    pianoNoteLbl.Text  = "Note: —"
+end
+
+-- Play/Stop toggle
+pianoPlayBtn.MouseButton1Click:Connect(function()
+    if pianoPlaying then
+        pianoStop()
+    else
+        local song = PIANO_SHEETS[selectedSong]
+        if song then pianoPlaySheet(song.sheet, song.name) end
+    end
+end)
+
+-- Play Custom
+useCustomBtn.MouseButton1Click:Connect(function()
+    if pianoPlaying then pianoStop(); return end
+    local txt = customSheetBox.Text:match("^%s*(.-)%s*$")
+    if txt == "" then
+        pianoStatusLbl.Text = "✗ Custom sheet kosong"
+        return
+    end
+    local parsed = parseCustomSheet(txt)
+    if #parsed == 0 then
+        pianoStatusLbl.Text = "✗ Format salah"
+        addConLog("Piano: format custom salah. Contoh: t,0.3 y,0.3", C.red, "[piano]")
+        return
+    end
+    pianoPlaySheet(parsed, "Custom")
+end)
+
+-- ================================================
+-- EXPOSE KE _G
+-- ================================================
+_G.piano = {
+    play  = function(sheet, label) pianoPlaySheet(sheet, label) end,
+    stop  = pianoStop,
+    note  = pianoFireNote,
+    songs = PIANO_SHEETS,
+    map   = PIANO_MAP,
+    scan  = findPianoRemotes,
+}
+
+-- Auto-scan remotes bila tab dibuka
+pianoTab.MouseButton1Click:Connect(function()
+    if not NoteRemote_P then
+        local ok = findPianoRemotes()
+        if ok then
+            remoteStatusLbl.Text       = "✓ NoteRemote found!"
+            remoteStatusLbl.TextColor3 = C.green
+            scanRemoteBtn.Text         = "✓ Done"
+            scanRemoteBtn.BackgroundColor3 = C.green
+        end
+    end
+end)
+
+-- ================================================
+-- PATCH SELESAI — pastikan line seterusnya ialah:
+-- setTab("console")
+-- ================================================
+
+
 setTab("console")
 addConLog("Hub Tools v3.0 loaded!", C.green,"[sys]")
 addConLog("rSpy capture semua — game, console, IY, script lain", C.dim,"[sys]")
